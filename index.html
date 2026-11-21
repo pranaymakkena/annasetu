@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AnnaSetu - Surplus Food Rescue, Hyderabad (synthetic demo)</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">AS</span>
+      <div>
+        <h1>AnnaSetu</h1>
+        <p class="tagline">Hyperlocal surplus food rescue for event &amp; wedding caterers, Hyderabad</p>
+      </div>
+    </div>
+    <span class="demo-tag">Synthetic demo data</span>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Main views">
+    <button class="tab active" role="tab" aria-selected="true" aria-controls="view-caterer" data-action="tab" data-view="caterer">Caterer Portal (Donate)</button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="view-feed" data-action="tab" data-view="feed">NGO &amp; Rider Dispatch (Live Feed)</button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="view-impact" data-action="tab" data-view="impact">Impact &amp; ESG Ledger</button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="view-roi" data-action="tab" data-view="roi">Business Model &amp; ROI</button>
+  </nav>
+
+  <main>
+    <!-- 1. Caterer Portal (Donate) -->
+    <section id="view-caterer" class="view active" role="tabpanel">
+      <div class="grid-2">
+        <section class="panel">
+          <h2>Post a surplus batch</h2>
+          <p class="hint">Use the sample caterer names only. Figures are illustrative.</p>
+          <form id="donate-form" novalidate>
+            <label>Caterer name
+              <input name="caterer" type="text" maxlength="60" required placeholder="e.g. Deccan Royal Caterers">
+            </label>
+            <label>Locality
+              <select name="locality" id="locality-select"></select>
+            </label>
+
+            <fieldset class="field-group">
+              <legend>Food (tap a preset)</legend>
+              <div class="chip-row">
+                <button type="button" class="chip" data-food="Veg Biryani &amp; Salan" aria-pressed="false">Veg Biryani &amp; Salan</button>
+                <button type="button" class="chip" data-food="Dal Tadka &amp; Jeera Rice" aria-pressed="false">Dal Tadka &amp; Jeera Rice</button>
+                <button type="button" class="chip" data-food="Assorted Indian Breads &amp; Paneer" aria-pressed="false">Assorted Indian Breads &amp; Paneer</button>
+                <button type="button" class="chip" data-food="South Indian Tiffin (Idli/Sambar)" aria-pressed="false">South Indian Tiffin (Idli/Sambar)</button>
+                <button type="button" class="chip" data-food="__custom" aria-pressed="false">Custom</button>
+              </div>
+              <input id="food" name="food" type="hidden" value="">
+              <label id="food-custom-wrap" class="hidden" hidden>Custom food description
+                <input id="food-custom" type="text" maxlength="80" placeholder="e.g. Chicken biryani">
+              </label>
+            </fieldset>
+
+            <fieldset class="field-group">
+              <legend>Veg / Non-Veg</legend>
+              <div class="chip-row">
+                <button type="button" class="tag" data-diet="Veg" aria-pressed="false">Veg</button>
+                <button type="button" class="tag" data-diet="Non-Veg" aria-pressed="false">Non-Veg</button>
+              </div>
+              <input id="diet" name="diet" type="hidden" value="">
+            </fieldset>
+
+            <fieldset class="field-group">
+              <legend>Quantity: <output id="meals-readout" for="kg-slider">50 meals (est.)</output></legend>
+              <div class="slider-row">
+                <input id="kg-slider" name="kg" type="range" min="5" max="100" step="1" value="20" aria-label="Weight in kg">
+                <span class="slider-value">20 kg</span>
+              </div>
+              <div class="chip-row">
+                <button type="button" class="chip" data-kg="10" aria-pressed="false">10 kg</button>
+                <button type="button" class="chip" data-kg="20" aria-pressed="false">20 kg</button>
+                <button type="button" class="chip" data-kg="50" aria-pressed="false">50 kg</button>
+              </div>
+              <p class="hint">Estimated meals = kg &divide; 0.4</p>
+            </fieldset>
+
+            <fieldset class="field-group">
+              <legend>Pickup-by window (urgent)</legend>
+              <div class="chip-row">
+                <button type="button" class="chip" data-window="1" aria-pressed="false">Within 1 Hour</button>
+                <button type="button" class="chip" data-window="2" aria-pressed="false">Within 2 Hours</button>
+                <button type="button" class="chip" data-window="3" aria-pressed="false">Within 3 Hours</button>
+              </div>
+            </fieldset>
+
+            <fieldset class="field-group">
+              <legend>Time cooked (required)</legend>
+              <div class="chip-row">
+                <button type="button" class="chip" data-cooked="0.5" aria-pressed="false">30 min ago</button>
+                <button type="button" class="chip" data-cooked="1" aria-pressed="false">1 hr ago</button>
+                <button type="button" class="chip" data-cooked="2" aria-pressed="false">2 hr ago</button>
+                <button type="button" class="chip" data-cooked="3" aria-pressed="false">3 hr ago</button>
+                <button type="button" class="chip" data-cooked="4" aria-pressed="false">4 hr ago</button>
+              </div>
+              <p id="effective-deadline" class="hint">Effective deadline: select a time cooked.</p>
+            </fieldset>
+
+            <fieldset class="field-group">
+              <legend>Handling checklist</legend>
+              <p class="hint">Storage</p>
+              <div class="chip-row" role="group" aria-label="Storage">
+                <button type="button" class="tag" data-storage="Hot-held" aria-pressed="false">Hot-held (&gt;60°C)</button>
+                <button type="button" class="tag" data-storage="Room Temp" aria-pressed="false">Room Temp</button>
+                <button type="button" class="tag" data-storage="Chilled" aria-pressed="false">Chilled (&lt;5°C)</button>
+              </div>
+              <p class="hint">Allergens</p>
+              <div class="chip-row" role="group" aria-label="Allergens">
+                <button type="button" class="tag" data-allergen="Dairy" aria-pressed="false">Dairy</button>
+                <button type="button" class="tag" data-allergen="Nuts" aria-pressed="false">Nuts</button>
+                <button type="button" class="tag" data-allergen="Gluten" aria-pressed="false">Gluten</button>
+                <button type="button" class="tag" data-allergen="Soy" aria-pressed="false">Soy</button>
+                <button type="button" class="tag" data-allergen="None" aria-pressed="false">None</button>
+              </div>
+              <p class="hint">Packaging</p>
+              <div class="chip-row" role="group" aria-label="Packaging">
+                <button type="button" class="tag" data-pack="Sealed Foil Trays" aria-pressed="false">Sealed Foil Trays</button>
+                <button type="button" class="tag" data-pack="Bulk Vessels (Bring Containers)" aria-pressed="false">Bulk Vessels (Bring Containers)</button>
+              </div>
+            </fieldset>
+
+            <div id="match-preview" class="match-preview" aria-live="polite"></div>
+            <p class="hint">Score = 40% distance (max(0, 1 − km/15)) + 35% capacity fit (min(1, remaining ÷ meals)) + 25% diet fit (exact 1.0, Both 0.8).</p>
+
+            <button type="submit" id="donate-submit" class="btn primary">Post batch</button>
+            <p id="donate-msg" class="form-msg" role="status"></p>
+          </form>
+
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Your batches</h2>
+            <label>Caterer
+              <select id="caterer-filter"></select>
+            </label>
+          </div>
+          <div id="caterer-list" class="card-list"></div>
+        </section>
+      </div>
+    </section>
+
+    <!-- 2. NGO & Rider Dispatch (Live Feed) -->
+    <section id="view-feed" class="view" role="tabpanel">
+      <h2>NGO capacity (servings/day)</h2>
+      <div id="ngo-panel" class="ngo-grid"></div>
+      <p id="feed-msg" class="form-msg" role="status"></p>
+      <div class="grid-2">
+        <section class="panel">
+          <h2>Live feed: open Posted batches</h2>
+          <div id="feed-posted" class="card-list"></div>
+        </section>
+        <section class="panel">
+          <h2>Rider dispatch: active rescues</h2>
+          <div id="feed-active" class="card-list"></div>
+        </section>
+      </div>
+    </section>
+
+    <!-- 3. Impact & ESG Ledger -->
+    <section id="view-impact" class="view" role="tabpanel">
+      <p class="hint"><span class="pill">illustrative / synthetic</span> All figures below are computed from synthetic sample batches.</p>
+      <div id="impact-stats" class="stat-grid"></div>
+      <section class="panel">
+        <h2>CO2e formula <span class="pill">illustrative factor</span></h2>
+        <p>CO2e avoided (kg) = kg diverted &times; <code>2.5</code></p>
+        <p class="hint">The 2.5 factor is an illustrative assumption, not a certified emissions value.</p>
+      </section>
+      <section class="panel">
+        <h2>Batch event ledger <span class="pill">illustrative / synthetic</span></h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Timestamp</th><th>Batch</th><th>Caterer</th><th>Event</th><th>NGO</th><th>Rider</th></tr>
+            </thead>
+            <tbody id="ledger-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+
+    <!-- 4. Business Model & ROI -->
+    <section id="view-roi" class="view" role="tabpanel">
+      <section class="panel">
+        <h2>How AnnaSetu earns</h2>
+        <ul>
+          <li><strong>SaaS subscription for caterers:</strong> a monthly plan for batch posting, analytics and compliance-ready logs.</li>
+          <li><strong>Per-rescue logistics fee:</strong> a flat fee for each batch dispatched to an NGO and collected by a volunteer rider.</li>
+          <li><strong>CSR partnerships:</strong> corporates fund rescues and receive impact reports for their ESG disclosures.</li>
+        </ul>
+        <p class="hint">All numbers in this section are illustrative assumptions.</p>
+      </section>
+
+      <div class="grid-2">
+        <section class="panel">
+          <h2>ROI calculator <span class="pill">illustrative assumptions</span></h2>
+          <form id="roi-form" novalidate>
+            <label>Monthly surplus events
+              <input name="events" id="roi-events" type="number" min="0" step="1">
+            </label>
+            <label>Average surplus per event (kg)
+              <input name="kgPerEvent" id="roi-kg" type="number" min="0" step="0.5">
+            </label>
+            <label>Disposal cost per kg (INR)
+              <input name="costPerKg" id="roi-cost" type="number" min="0" step="1">
+            </label>
+            <label>Platform fee per event (INR)
+              <input name="feePerEvent" id="roi-fee" type="number" min="0" step="1">
+            </label>
+          </form>
+        </section>
+
+        <section class="panel">
+          <h2>Monthly outputs <span class="pill">illustrative</span></h2>
+          <div id="roi-out"></div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p id="legal-text" class="legal">Disclaimer: AnnaSetu is a logistics coordination platform only. We do not inspect, test, or certify food safety, nor do we guarantee tax deductions or legal exemptions. Receivers must verify food condition upon pickup.</p>
+    <p class="small">Synthetic demo only. Caterers, NGOs, riders, localities and coordinates are fictional placeholders. Phone numbers are placeholders such as +91-XXXXX-00000.</p>
+  </footer>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

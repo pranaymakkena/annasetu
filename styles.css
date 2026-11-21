@@ -1,0 +1,376 @@
+/* AnnaSetu — civic-tech theme: saffron/amber accents, slate text, off-white background.
+   Emerald = live active rescues. Crimson = urgent (<45 min to expiry). */
+:root {
+  --bg: #faf7f2;
+  --panel: #ffffff;
+  --ink: #1e293b;
+  --muted: #475569;
+  --border: #e2e8f0;
+  --saffron: #f59e0b;
+  --saffron-dark: #92400e;
+  --saffron-bg: #fef3c7;
+  --emerald: #047857;
+  --emerald-bg: #d1fae5;
+  --crimson: #b91c1c;
+  --crimson-bg: #fee2e2;
+  --radius: 10px;
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; padding: 0; }
+
+body {
+  font-family: system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  line-height: 1.5;
+  font-size: 15px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+h1, h2, h3 { margin: 0 0 0.5rem; line-height: 1.2; }
+h1 { font-size: 1.5rem; }
+h2 { font-size: 1.15rem; }
+h3 { font-size: 1rem; }
+p { margin: 0.35rem 0; }
+
+/* ---------- Header ---------- */
+.site-header {
+  background: var(--ink);
+  color: #ffffff;
+  padding: 0.9rem 1rem;
+  border-bottom: 4px solid var(--saffron);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.brand { display: flex; align-items: center; gap: 0.75rem; }
+.logo {
+  width: 42px; height: 42px;
+  border-radius: 50%;
+  background: var(--saffron);
+  color: var(--ink);
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.tagline { margin: 0; color: #cbd5e1; font-size: 0.85rem; }
+.demo-tag {
+  background: var(--saffron);
+  color: var(--ink);
+  font-weight: 700;
+  font-size: 0.8rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+}
+
+/* ---------- Tabs (wrap on wide, scroll on narrow) ---------- */
+.tabs {
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 0.25rem;
+  padding: 0 0.5rem;
+  overflow-x: auto;
+  white-space: nowrap;
+  -webkit-overflow-scrolling: touch;
+}
+.tab {
+  appearance: none;
+  background: none;
+  border: none;
+  border-bottom: 4px solid transparent;
+  padding: 0.85rem 0.9rem;
+  font: inherit;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.tab:hover { color: var(--ink); }
+.tab.active { color: var(--ink); border-bottom-color: var(--saffron); background: var(--saffron-bg); }
+.tab:focus-visible, .btn:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 3px solid var(--saffron);
+  outline-offset: 2px;
+}
+
+/* ---------- Layout ---------- */
+main {
+  flex: 1;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+.view { display: none; }
+.view.active { display: block; }
+.grid-2, .ngo-grid, .stat-grid { display: grid; gap: 1rem; grid-template-columns: 1fr; }
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+.panel-head { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.hint, .meta { color: var(--muted); font-size: 0.9rem; }
+.empty { color: var(--muted); font-style: italic; }
+.pill {
+  display: inline-block;
+  background: var(--saffron-bg);
+  color: var(--saffron-dark);
+  border: 1px solid var(--saffron);
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+/* ---------- Forms ---------- */
+form label { display: block; font-weight: 600; font-size: 0.9rem; margin-bottom: 0.7rem; }
+input, select {
+  display: block;
+  width: 100%;
+  margin-top: 0.25rem;
+  padding: 0.5rem 0.6rem;
+  font: inherit;
+  font-weight: 400;
+  color: var(--ink);
+  background: #ffffff;
+  border: 1px solid #94a3b8;
+  border-radius: 6px;
+}
+.row-2 { display: grid; gap: 0.75rem; grid-template-columns: 1fr; }
+.form-msg { font-weight: 600; min-height: 1.4em; color: var(--saffron-dark); }
+
+.btn {
+  appearance: none;
+  border: 2px solid var(--ink);
+  background: #ffffff;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+  padding: 0.55rem 0.9rem;
+  border-radius: 6px;
+  cursor: pointer;
+  min-height: 44px;
+}
+.btn.primary { background: var(--saffron); border-color: var(--saffron-dark); color: var(--ink); }
+.btn.primary:hover { background: #d97706; }
+.btn.emerald { background: var(--emerald); border-color: var(--emerald); color: #ffffff; }
+.btn.emerald:hover { background: #065f46; }
+
+/* ---------- Cards ---------- */
+.card-list { display: grid; gap: 0.75rem; }
+.card {
+  border: 1px solid var(--border);
+  border-left: 6px solid #94a3b8;
+  border-radius: var(--radius);
+  padding: 0.85rem;
+  background: #ffffff;
+}
+.card.live { border-left-color: var(--emerald); background: #f0fdf7; }
+.card.urgent { border-left-color: var(--crimson); background: #fff5f5; box-shadow: 0 0 0 1px var(--crimson) inset; }
+.card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; flex-wrap: wrap; }
+.card .actions { margin-top: 0.6rem; }
+
+.badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.badge-posted { background: var(--saffron-bg); color: var(--saffron-dark); }
+.badge-claimed, .badge-collected { background: var(--emerald-bg); color: var(--emerald); }
+.badge-delivered { background: #e2e8f0; color: var(--ink); }
+
+.urgency { display: inline-block; font-weight: 700; font-size: 0.85rem; margin-top: 0.3rem; }
+.urgency.urgent { color: var(--crimson); background: var(--crimson-bg); padding: 0.1rem 0.45rem; border-radius: 4px; }
+.urgency.live { color: var(--emerald); }
+.urgency.ok { color: var(--muted); }
+
+.disclaimer {
+  margin-top: 0.6rem;
+  font-size: 0.78rem;
+  color: var(--ink);
+  background: var(--saffron-bg);
+  border-left: 3px solid var(--saffron);
+  padding: 0.4rem 0.5rem;
+  border-radius: 4px;
+}
+
+/* ---------- NGO panel ---------- */
+.ngo-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.85rem;
+}
+.bar { height: 10px; background: #e2e8f0; border-radius: 999px; overflow: hidden; margin: 0.5rem 0; }
+.bar span { display: block; height: 100%; background: var(--saffron); }
+
+/* ---------- Impact ---------- */
+.stat {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-top: 4px solid var(--saffron);
+  border-radius: var(--radius);
+  padding: 0.85rem;
+}
+.stat .value { font-size: 1.5rem; font-weight: 800; }
+.stat .label { font-size: 0.85rem; color: var(--muted); }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid var(--border); white-space: nowrap; }
+th { background: var(--ink); color: #ffffff; position: sticky; top: 0; }
+code { background: #f1f5f9; padding: 0.1rem 0.3rem; border-radius: 4px; font-size: 0.88rem; }
+
+/* ---------- Footer ---------- */
+.site-footer {
+  background: var(--ink);
+  color: #ffffff;
+  padding: 1rem;
+  border-top: 4px solid var(--saffron);
+}
+.legal { margin: 0 auto; max-width: 1200px; font-weight: 600; }
+.small { margin: 0.4rem auto 0; max-width: 1200px; font-size: 0.8rem; color: #cbd5e1; }
+
+/* ---------- Responsive ---------- */
+@media (min-width: 560px) {
+  .row-2 { grid-template-columns: 1fr 1fr; }
+  .stat-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (min-width: 800px) {
+  main { padding: 1.5rem; }
+  .grid-2 { grid-template-columns: 1fr 1fr; }
+  .ngo-grid { grid-template-columns: repeat(4, 1fr); }
+  .stat-grid { grid-template-columns: repeat(4, 1fr); }
+  .tabs { overflow-x: visible; justify-content: center; flex-wrap: wrap; white-space: normal; }
+  .tab { padding: 0.9rem 1.1rem; }
+}
+
+@media (max-width: 480px) {
+  body { font-size: 14px; }
+  h1 { font-size: 1.25rem; }
+  .demo-tag { display: none; }
+  .tab { padding: 0.75rem 0.7rem; }
+}
+
+/* ---------- Caterer Portal: donate form (chips, tags, sliders, match preview) ---------- */
+.chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 0.4rem 0 0.8rem; }
+.chip,
+.tag {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid #94a3b8;
+  border-radius: 999px;
+  background: #faf7f2;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 500;
+  line-height: 1.2;
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.chip:hover,
+.tag:hover { border-color: var(--saffron); }
+.chip[aria-pressed="true"],
+.tag[aria-pressed="true"] {
+  background: var(--saffron);
+  border-color: var(--saffron-dark);
+  color: var(--ink);
+  font-weight: 700;
+}
+.chip:focus-visible,
+.tag:focus-visible,
+button:focus-visible,
+input[type="range"]:focus-visible {
+  outline: 3px solid var(--saffron);
+  outline-offset: 2px;
+}
+
+/* Quantity slider */
+input[type="range"] {
+  width: 100%;
+  accent-color: var(--saffron);
+  margin: 0.4rem 0;
+  padding: 0;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+/* Match preview: list of badges */
+.match-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.match-preview > li { list-style: none; }
+.match-badge {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--saffron);
+  border-left: 4px solid var(--saffron);
+  border-radius: 6px;
+  background: var(--saffron-bg);
+  color: var(--saffron-dark);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+/* Effective deadline note */
+#effective-deadline {
+  font-weight: 700;
+  color: var(--saffron-dark);
+  background: var(--saffron-bg);
+  border-left: 3px solid var(--saffron);
+  padding: 0.35rem 0.55rem;
+  border-radius: 4px;
+}
+
+/* Countdown urgency classes (bare form; compound .card/.urgency rules above take precedence) */
+.urgent {
+  color: var(--crimson);
+  border: 1px solid var(--crimson);
+  background: var(--crimson-bg);
+}
+.live {
+  color: var(--emerald);
+  border: 1px solid var(--emerald);
+  background: var(--emerald-bg);
+}
+
+/* Small screens: chips wrap, buttons go full-width-friendly */
+@media (max-width: 639px) {
+  .chip-row { gap: 8px; }
+  .chip,
+  .tag { flex: 1 1 auto; }
+  .btn { width: 100%; }
+  .match-badge { width: 100%; }
+}
+
