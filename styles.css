@@ -374,3 +374,151 @@ input[type="range"] {
   .match-badge { width: 100%; }
 }
 
+
+/* ---------- Live Feed: modal, tracker, radar, expiry states ---------- */
+/* .urgent and .live are already defined above; not redefined here. */
+
+.hidden { display: none !important; }
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(30, 41, 59, 0.6);
+  padding: 1rem;
+}
+.modal.hidden { display: none; }
+.modal-card {
+  background: var(--bg);
+  border-radius: var(--radius);
+  max-width: 520px;
+  width: 92vw;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 1.25rem;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.35);
+}
+.modal-close {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0.5rem 1rem;
+  border: 2px solid var(--saffron-dark);
+  border-radius: 6px;
+  background: var(--saffron);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.modal-close:hover { background: #d97706; }
+
+/* 4-stage pickup tracker */
+.tracker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+.step {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0.25rem 0.7rem;
+  border: 1px solid #94a3b8;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  color: var(--ink);
+  background: #ffffff;
+}
+.step.done {
+  border-color: var(--emerald);
+  background: var(--emerald-bg);
+  color: var(--emerald);
+  font-weight: 600;
+}
+.step.done::before { content: "\2713\00a0"; font-weight: 700; }
+.step.current {
+  background: var(--saffron);
+  border-color: var(--saffron-dark);
+  color: var(--ink);
+  font-weight: 700;
+}
+.step.pending { color: var(--muted); }
+.step-detail {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+/* Radar (SVG pickup map) */
+.radar-wrap {
+  display: block;
+  max-width: 260px;
+  margin: 0.5rem auto;
+}
+.radar {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.radar-ring {
+  fill: none;
+  stroke: #94a3b8;
+  stroke-opacity: 0.35;
+}
+.ngo-pin { fill: var(--saffron); }
+.ngo-pin.assigned { fill: var(--emerald); }
+.donor-pin { fill: #1e293b; }
+.radar-label {
+  font-size: 11px;
+  fill: #1e293b;
+}
+.rider-dot { fill: var(--emerald); }
+.rider-dot.rider-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.35); opacity: 0.55; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rider-dot.rider-pulse { animation: none; }
+}
+
+/* Temperature check and warnings */
+.temp-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 44px;
+}
+.temp-check label {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
+}
+.warn {
+  color: var(--crimson);
+  font-weight: 700;
+}
+/* Expiry lock */
+.expired {
+  border-color: var(--crimson);
+  background: #f1f5f9;
+  opacity: 0.85;
+}
+
+@media (max-width: 640px) {
+  .tracker { flex-wrap: wrap; }
+  .modal-card { padding: 16px; }
+}
+
