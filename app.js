@@ -9,6 +9,9 @@
   var MEAL_KG = 0.4;
   var CO2_FACTOR = 2.5;
   var MEAL_VALUE_INR = 65;
+  // Business model: Tier 1 SaaS subscription per caterer per month; Tier 2 CSR stipend per rescue.
+  var SUBSCRIPTION_INR = 1999;
+  var TIER2_PER_RESCUE_INR = 40;
   var STAGES = ["Posted", "Claimed", "Collected", "Delivered"];
   // Synthetic riders for dispatch, assigned round-robin. Names and vehicles are fictional.
   var RIDERS = [
@@ -31,6 +34,8 @@
   };
 
   var tickerId = null;
+  var seedSnapshot = null;
+  var resetMsgTimer = null;
 
   // ---------- helpers ----------
   function $(id) { return document.getElementById(id); }
@@ -808,6 +813,31 @@
     };
   }
 
+  // ---------- pure business-model logic (no DOM) ----------
+  // Tier 1 MRR = caterers x 1999. Tier 2 sponsorship is reported separately and never added to MRR.
+  function calcBusinessModel(input) {
+    var caterers = Number(input.caterers) || 0;
+    var rescuesPerMonth = Number(input.rescuesPerMonth) || 0;
+    var kgPerRescue = Number(input.kgPerRescue) || 0;
+    var savingsPct = Number(input.savingsPct) || 0;
+    var rawSpendInr = Number(input.rawSpendInr) || 0;
+
+    var mrr = caterers * SUBSCRIPTION_INR;
+    var perCatererSavings = rawSpendInr * savingsPct / 100;
+    var perCatererRoi = perCatererSavings / SUBSCRIPTION_INR;
+    var totalSavings = caterers * perCatererSavings;
+    var tier2Inr = caterers * rescuesPerMonth * TIER2_PER_RESCUE_INR;
+    return {
+      mrr: mrr,
+      perCatererSavings: perCatererSavings,
+      perCatererRoi: perCatererRoi,
+      totalSavings: totalSavings,
+      tier2Inr: tier2Inr,
+      totalPlatformRevenue: mrr + tier2Inr,
+      totalMealsPerMonth: Math.round(caterers * rescuesPerMonth * kgPerRescue / MEAL_KG)
+    };
+  }
+
   // ---------- render: view 3 (impact / ESG ledger) ----------
   function kpiCardHtml(label, value, unit, extraCls) {
     return '<div class="kpi-card' + (extraCls ? " " + extraCls : "") + '">' +
@@ -908,13 +938,15 @@
 
   // ---------- render: view 4 (ROI) ----------
   function renderRoiOutputs() {
+    var out = $("roi-out");
+    if (!out) return;
     var r = state.roi;
     var kgDiverted = r.events * r.kgPerEvent;
     var disposalAvoided = kgDiverted * r.costPerKg;
     var fees = r.events * r.feePerEvent;
     var net = disposalAvoided - fees;
 
-    $("roi-out").innerHTML =
+    out.innerHTML =
       '<table><tbody>' +
       "<tr><td>Kg diverted per month</td><td><strong>" + fmtNum(kgDiverted) + " kg</strong></td></tr>" +
       "<tr><td>Monthly disposal cost avoided</td><td><strong>" + fmtInr(disposalAvoided) + "</strong></td></tr>" +
@@ -927,7 +959,9 @@
 
   function readRoiInputs() {
     function num(id, fallback) {
-      var v = Number($(id).value);
+      var el = $(id);
+      if (!el) return fallback;
+      var v = Number(el.value);
       return isFinite(v) && v >= 0 ? v : fallback;
     }
     state.roi = {
@@ -938,12 +972,139 @@
     };
   }
 
+  // ---------- render: business model & ROI ----------
+  function setTextIfPresent(id, text) {
+    var el = $(id);
+    if (el) el.textContent = text;
+  }
+
+  function setValueIfPresent(id, v) {
+    var el = $(id);
+    if (el) el.value = v;
+  }
+
+  // Result card: main line set with textContent; optional sub-line added as a child element.
+  function setCardText(id, main, note) {
+    var el = $(id);
+    if (!el) return;
+    el.textContent = main;
+    if (note) {
+      var sub = document.createElement("div");
+      sub.className = "kpi-unit";
+      sub.textContent = note;
+      el.appendChild(sub);
+    }
+  }
+
+  // Slider / number input value, or the fallback when the element is missing or invalid.
+  function bmInputValue(id, fallback) {
+    var el = $(id);
+    if (!el) return fallback;
+    var v = Number(el.value);
+    return isFinite(v) && v >= 0 ? v : fallback;
+  }
+
+  function bmInt(n) {
+    var v = Math.round(n);
+    return typeof v.toLocaleString === "function" ? v.toLocaleString("en-IN") : String(v);
+  }
+
+  function renderBusinessModel() {
+    var caterers = Math.round(bmInputValue("bm-caterers", 50));
+    var rescues = Math.round(bmInputValue("bm-rescues", 12));
+    var kg = bmInputValue("bm-kg", 20);
+    var savingsPct = bmInputValue("bm-waste-pct", 10);
+    var rawSpend = bmInputValue("bm-raw-spend", 150000);
+
+    setTextIfPresent("bm-caterers-out", String(caterers));
+    setTextIfPresent("bm-rescues-out", String(rescues));
+    setTextIfPresent("bm-kg-out", kg + " kg");
+    setTextIfPresent("bm-waste-pct-out", savingsPct + "%");
+
+    var r = calcBusinessModel({
+      caterers: caterers,
+      rescuesPerMonth: rescues,
+      kgPerRescue: kg,
+      savingsPct: savingsPct,
+      rawSpendInr: rawSpend
+    });
+
+    setCardText("bm-mrr", "MRR \u20B9" + bmInt(r.mrr) + " / month", "SaaS subscriptions only");
+    setCardText("bm-savings", "Caterer raw-material savings \u20B9" + bmInt(r.perCatererSavings) +
+      " / month per caterer", "vs subscription \u20B9" + bmInt(SUBSCRIPTION_INR));
+    setCardText("bm-roi", "ROI for caterer: " + r.perCatererRoi.toFixed(1) + "x", "savings \u00F7 subscription");
+    setCardText("bm-meals", "Meals rescued / month at scale: " + bmInt(r.totalMealsPerMonth), "");
+
+    setTextIfPresent("bm-formula",
+      "MRR = caterers \u00D7 \u20B9" + bmInt(SUBSCRIPTION_INR) +
+      " \u00B7 Caterer savings = raw spend \u00D7 savings% " +
+      "\u00B7 ROI = savings \u00F7 \u20B9" + bmInt(SUBSCRIPTION_INR) +
+      " \u00B7 Meals = caterers \u00D7 rescues \u00D7 kg \u00F7 0.4 " +
+      "\u00B7 Tier 2 sponsorship = rescues \u00D7 \u20B940 (not included in MRR)");
+  }
+
+  // Copies the seed batches and NGOs once, at load, before any user action.
+  function takeSeedSnapshot() {
+    if (seedSnapshot) return;
+    seedSnapshot = {
+      now: Date.now(),
+      batches: JSON.parse(JSON.stringify(state.batches)),
+      ngos: JSON.parse(JSON.stringify(state.ngos)),
+      nextNum: state.nextNum
+    };
+  }
+
+  // Moves every timestamp on a batch forward by delta milliseconds.
+  function shiftBatchTimes(b, delta) {
+    ["preparedAt", "postedAt", "expiresAt", "claimedAt", "collectedAt", "deliveredAt"].forEach(function (k) {
+      if (typeof b[k] === "number") b[k] += delta;
+    });
+    (b.events || []).forEach(function (e) {
+      if (typeof e.at === "number") e.at += delta;
+    });
+  }
+
+  function showResetMessage(text) {
+    var el = $("reset-msg");
+    if (!el) return;
+    el.textContent = text;
+    if (resetMsgTimer !== null) clearTimeout(resetMsgTimer);
+    resetMsgTimer = setTimeout(function () {
+      el.textContent = "";
+      resetMsgTimer = null;
+    }, 3000);
+  }
+
+  // Restores the load-time seed without reloading the page.
+  function resetDemoData() {
+    if (!seedSnapshot) return;
+    var delta = Date.now() - seedSnapshot.now;
+    state.batches = JSON.parse(JSON.stringify(seedSnapshot.batches));
+    state.batches.forEach(function (b) { shiftBatchTimes(b, delta); });
+    state.ngos = JSON.parse(JSON.stringify(seedSnapshot.ngos));
+    state.nextNum = seedSnapshot.nextNum;
+    state.riderIdx = 0;
+    state.feedMsg = "";
+    state.catererFilter = "";
+
+    var form = $("donate-form");
+    if (form) form.reset();
+    resetDonateForm();
+    setTextIfPresent("donate-msg", "");
+
+    hideHandling();
+    populateCatererFilter();
+    renderAll();
+    startTicker();
+    showResetMessage("Demo reset to seed data.");
+  }
+
   // ---------- navigation & wiring ----------
   var renderers = {
     caterer: function () { renderCatererList(); },
     feed: function () { renderFeed(); },
     impact: function () { renderImpact(); },
-    roi: function () { renderRoiOutputs(); }
+    roi: function () { renderBusinessModel(); }
   };
 
   function renderAll() {
@@ -951,7 +1112,7 @@
     renderCatererList();
     renderFeed();
     renderImpact();
-    renderRoiOutputs();
+    renderBusinessModel();
   }
 
   function setView(view) {
@@ -1016,10 +1177,23 @@
     renderCatererList();
   });
 
-  $("roi-form").addEventListener("input", function () {
-    readRoiInputs();
-    renderRoiOutputs();
+  var roiForm = $("roi-form");
+  if (roiForm) {
+    roiForm.addEventListener("input", function () {
+      readRoiInputs();
+      renderRoiOutputs();
+    });
+  }
+
+  ["bm-caterers", "bm-rescues", "bm-kg", "bm-waste-pct", "bm-raw-spend"].forEach(function (id) {
+    var el = $(id);
+    if (!el) return;
+    el.addEventListener("input", renderBusinessModel);
+    el.addEventListener("change", renderBusinessModel);
   });
+
+  var resetBtn = $("reset-demo-btn");
+  if (resetBtn) resetBtn.addEventListener("click", resetDemoData);
 
   var esgGenBtn = $("esg-generate-btn");
   if (esgGenBtn) esgGenBtn.addEventListener("click", onEsgGenerate);
@@ -1035,10 +1209,11 @@
   $("legal-text").textContent = D.DISCLAIMER;
   renderLocalitySelect();
   renderDonateWidgets();
-  $("roi-events").value = state.roi.events;
-  $("roi-kg").value = state.roi.kgPerEvent;
-  $("roi-cost").value = state.roi.costPerKg;
-  $("roi-fee").value = state.roi.feePerEvent;
+  takeSeedSnapshot();
+  setValueIfPresent("roi-events", state.roi.events);
+  setValueIfPresent("roi-kg", state.roi.kgPerEvent);
+  setValueIfPresent("roi-cost", state.roi.costPerKg);
+  setValueIfPresent("roi-fee", state.roi.feePerEvent);
   populateCatererFilter();
   renderAll();
 

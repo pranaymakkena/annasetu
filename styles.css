@@ -606,3 +606,100 @@ input[type="range"] {
   }
 }
 
+
+/* ---------- Business Model & ROI ---------- */
+.pillar-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+@media (min-width: 640px) {
+  .pillar-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (min-width: 1024px) {
+  .pillar-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+.pillar-card {
+  background: #faf7f2;
+  border: 1px solid #94a3b8;
+  border-top: 4px solid #f59e0b;
+  border-radius: 12px;
+  padding: 18px;
+  box-shadow: 0 1px 3px rgba(30, 41, 59, 0.12);
+}
+.pillar-card h3 {
+  font-size: 1.05rem;
+  color: #1e293b;
+}
+.pillar-card .price {
+  font-weight: 700;
+  color: #b45309;
+  margin: 8px 0;
+}
+.pillar-card ul {
+  padding-left: 18px;
+  line-height: 1.5;
+}
+
+.calc-card {
+  background: #ffffff;
+  border: 1px solid #94a3b8;
+  border-radius: 12px;
+  padding: 20px;
+  max-width: 960px;
+}
+.calc-card label {
+  display: block;
+  margin-top: 14px;
+  font-weight: 600;
+}
+.calc-card input[type="range"] {
+  width: 100%;
+  accent-color: #f59e0b;
+}
+.calc-card input[type="number"] {
+  min-height: 44px;
+  padding: 8px;
+  border: 1px solid #94a3b8;
+  border-radius: 6px;
+  font-size: 1rem;
+  width: 100%;
+  max-width: 260px;
+}
+output {
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.btn-secondary {
+  min-height: 44px;
+  padding: 8px 16px;
+  border: 2px solid #1e293b;
+  background: transparent;
+  color: #1e293b;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.btn-secondary:focus-visible {
+  outline: 3px solid #f59e0b;
+  outline-offset: 2px;
+}
+
+footer #reset-msg {
+  font-size: 0.8rem;
+  color: #047857;
+  margin: 6px 0;
+}
+
+#bm-results .kpi-value {
+  font-size: 1.6rem;
+}
+
+@media (max-width: 640px) {
+  .calc-card { padding: 14px; }
+  footer { text-align: center; }
+  #reset-demo-btn { width: 100%; }
+}
+
