@@ -251,17 +251,17 @@
   function feedActionsHtml(b) {
     if (b.locked || b.status === "Expired" || b.status === "Delivered") return "";
     if (b.status === "Posted") {
-      return '<button type="button" class="btn primary" data-action="claim" data-id="' + esc(b.id) +
+      return '<button type="button" class="btn btn-primary" data-action="claim" data-id="' + esc(b.id) +
         '">Claim Batch (Assign Volunteer)</button>';
     }
     if (b.status === "Claimed") {
       return '<label class="temp-check"><input type="checkbox" data-temp-check="' + esc(b.id) + '"' +
         (b.tempChecked ? " checked" : "") + "> Core temp checked \u2265 60\u00B0C or chilled \u2264 5\u00B0C</label>" +
-        '<button type="button" class="btn emerald" data-action="confirm-pickup" data-id="' + esc(b.id) + '"' +
+        '<button type="button" class="btn btn-primary" data-action="confirm-pickup" data-id="' + esc(b.id) + '"' +
         (b.tempChecked ? "" : " disabled") + ">Confirm Pickup &amp; Check Temp</button>";
     }
     if (b.status === "Collected") {
-      return '<button type="button" class="btn emerald" data-action="confirm-delivery" data-id="' + esc(b.id) +
+      return '<button type="button" class="btn btn-primary" data-action="confirm-delivery" data-id="' + esc(b.id) +
         '">Confirm Delivery at Shelter</button>';
     }
     return "";
@@ -521,10 +521,13 @@
     return '<span class="badge badge-' + esc(status.toLowerCase()) + '">' + esc(status) + "</span>";
   }
 
-  function formatCountdown(leftMs) {
-    if (leftMs <= 0) return "Expired";
-    var secs = Math.floor(leftMs / 1000);
-    return pad(Math.floor(secs / 60)) + ":" + pad(secs % 60);
+  // Countdown as HHh MMm SSs, zero-padded. Returns "Expired" once the deadline has passed.
+  function formatCountdown(ms) {
+    if (ms <= 0) return "Expired";
+    var secs = Math.floor(ms / 1000);
+    var hours = Math.floor(secs / 3600);
+    var mins = Math.floor((secs % 3600) / 60);
+    return pad(hours) + "h " + pad(mins) + "m " + pad(secs % 60) + "s";
   }
 
   // Live countdown element; the ticker keeps its text and classes current.
@@ -535,7 +538,8 @@
     var left = b.expiresAt - now;
     var cls = (isLive(b) ? " live" : "") + (left < URGENT_MIN * MIN ? " urgent" : "");
     return '<span class="urgency' + (cls || " ok") + '" data-expires="' + esc(b.expiresAt) +
-      '" data-status="' + esc(b.status) + '">' + esc(formatCountdown(left)) + "</span>";
+      '" data-status="' + esc(b.status) + '"><span class="countdown">' + esc(formatCountdown(left)) +
+      "</span></span>";
   }
 
   // Updates only the text/classes of [data-expires] elements, once per second.
@@ -551,7 +555,8 @@
       var live = el.getAttribute("data-status") === "Claimed" || el.getAttribute("data-status") === "Collected";
       el.classList.toggle("live", live);
       el.classList.toggle("urgent", left < URGENT_MIN * MIN);
-      el.textContent = formatCountdown(left);
+      var target = el.querySelector(".countdown") || el;
+      target.textContent = formatCountdown(left);
     });
   }
 
@@ -637,6 +642,7 @@
     var cls = b.status === "Expired" ? "expired" : (isLive(b) ? "live" : (isUrgent(b, now) ? "urgent" : ""));
     var ngo = b.ngoId ? ngoById(b.ngoId) : null;
     var html = '<article class="card ' + cls + '">';
+    html += '<div class="card-body">';
     html += '<div class="card-top"><h3>' + esc(b.food) + "</h3>" + badgeHtml(b.status) + "</div>";
     html += '<p class="meta"><strong>' + esc(b.id) + "</strong> · " + esc(b.caterer) + " · " + esc(b.locality) + "</p>";
     html += '<p class="meta">' + esc(b.diet) + " · " + esc(b.servings) + " servings · " + fmtNum(b.kg) + " kg</p>";
@@ -648,16 +654,31 @@
     if (b.dispatchNote) html += '<p class="warn">' + esc(b.dispatchNote) + "</p>";
     html += trackerHtml(b);
     html += '<div class="radar-wrap">' + renderRadar(b) + "</div>";
-    var actions = actionHtml || "";
-    if (isOpenStatus(b)) {
-      actions += '<button type="button" class="btn" data-action="handling" data-id="' + esc(b.id) +
-        '">Handling guide</button>';
-    }
-    if (actions) html += '<div class="actions">' + actions + "</div>";
     html += '<p class="disclaimer">' + esc(D.DISCLAIMER) + "</p>";
+    html += "</div>";
+    html += '<div class="card-footer">' + cardFooterHtml(b, actionHtml) + "</div>";
     html += "</article>";
     return html;
   }
+
+  // Footer content: forward actions plus the handling guide while the batch is open.
+  // Delivered and Expired batches have no actions, so a status line is shown instead.
+  function cardFooterHtml(b, actionHtml) {
+    var footer = actionHtml || "";
+    if (isOpenStatus(b)) {
+      footer += '<button type="button" class="btn btn-secondary" data-action="handling" data-id="' + esc(b.id) +
+        '">Handling guide</button>';
+    }
+    if (footer) return footer;
+    if (b.status === "Delivered") {
+      return '<p class="card-status">' + esc("Delivered \u2022 +" + creditsFor(b) + " impact credits") + "</p>";
+    }
+    if (b.status === "Expired") {
+      return '<p class="card-status">' + esc("Expired \u2014 Do Not Distribute") + "</p>";
+    }
+    return '<p class="card-status">' + esc(b.status) + "</p>";
+  }
+
 
 
   // ---------- render: view 1 (caterer) ----------
