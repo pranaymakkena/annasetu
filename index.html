@@ -162,13 +162,40 @@
 
     <!-- 3. Impact & ESG Ledger -->
     <section id="view-impact" class="view" role="tabpanel">
-      <p class="hint"><span class="pill">illustrative / synthetic</span> All figures below are computed from synthetic sample batches.</p>
-      <div id="impact-stats" class="stat-grid"></div>
+      <h2>Impact to date (illustrative / synthetic)</h2>
+      <div id="ledger-kpis" class="kpi-grid"></div>
+
       <section class="panel">
-        <h2>CO2e formula <span class="pill">illustrative factor</span></h2>
-        <p>CO2e avoided (kg) = kg diverted &times; <code>2.5</code></p>
-        <p class="hint">The 2.5 factor is an illustrative assumption, not a certified emissions value.</p>
+        <h2>Batch event ledger (timestamps)</h2>
+        <div class="table-wrap"><table class="ledger-table"><thead><tr><th>Time</th><th>Batch</th><th>Caterer</th><th>Event</th></tr></thead><tbody id="ledger-events-body"></tbody></table></div>
       </section>
+
+
+      <section id="ledger-method" class="method-box">
+        <h2>Transparent Methodology &amp; Assumptions</h2>
+        <ul>
+          <li>1 Meal = 400 g (0.4 kg) of balanced cooked food.</li>
+          <li>Greenhouse Gas Factor = 2.5 kg CO2e prevented per 1 kg of food waste diverted from landfills (based on FAO/UNEP food waste emission benchmarks).</li>
+          <li>Value Saved = &#8377;65 average meal equivalent value.</li>
+          <li>Meals = kg rescued &divide; 0.4</li>
+          <li>CO2e prevented = kg rescued &times; 2.5</li>
+          <li>Value saved = meals &times; &#8377;65</li>
+          <li>Average rescue turnaround = mean of (deliveredAt &minus; postedAt) in minutes across Delivered batches.</li>
+        </ul>
+        <p class="hint">All figures are illustrative and synthetic.</p>
+      </section>
+
+      <section id="esg-card" class="esg-card">
+        <h2>Caterer ESG Impact Report Preview</h2>
+        <label for="esg-caterer-select">Caterer</label>
+        <select id="esg-caterer-select"></select>
+        <div id="esg-report-preview"></div>
+        <button type="button" id="esg-generate-btn">Generate Monthly ESG Summary</button>
+        <button type="button" id="esg-print-btn" class="hidden">Print / Save as PDF</button>
+        <p class="esg-note">This is an operational sustainability report, not a tax-exemption certificate. AnnaSetu does not guarantee tax deductions or legal exemptions.</p>
+      </section>
+
+      <div id="impact-stats" class="stat-grid hidden" hidden></div>
       <section class="panel">
         <h2>Batch event ledger <span class="pill">illustrative / synthetic</span></h2>
         <div class="table-wrap">

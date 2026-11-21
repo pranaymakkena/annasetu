@@ -5,6 +5,10 @@
   var D = window.AnnaSetuData;
   var MIN = 60 * 1000;
   var URGENT_MIN = 45;
+  // Impact constants: 1 meal = 0.4 kg; 2.5 kg CO2e per kg diverted; INR 65 per meal equivalent.
+  var MEAL_KG = 0.4;
+  var CO2_FACTOR = 2.5;
+  var MEAL_VALUE_INR = 65;
   var STAGES = ["Posted", "Claimed", "Collected", "Delivered"];
   // Synthetic riders for dispatch, assigned round-robin. Names and vehicles are fictional.
   var RIDERS = [
@@ -116,9 +120,7 @@
   // ---------- pure donate-form logic (no DOM) ----------
   var HOUR = 60 * MIN;
   var MAX_COOKED_HOURS = 4;
-  var KG_PER_MEAL = 0.4;
-
-  function mealsFor(kg) { return Math.round(kg / KG_PER_MEAL); }
+  function mealsFor(kg) { return Math.round(kg / MEAL_KG); }
 
   // Effective deadline = earlier of (pickup window) and (4 h after cooking).
   // Returns null until a Time Cooked value is chosen.
@@ -732,40 +734,114 @@
   }
 
 
-  // ---------- render: view 3 (impact) ----------
-  function renderImpact() {
-    var delivered = state.batches.filter(function (b) { return b.status === "Delivered"; });
-    var servings = 0;
-    var kg = 0;
-    var ngoSet = [];
-    delivered.forEach(function (b) {
-      servings += b.servings;
-      kg += b.kg;
-      if (b.ngoId && ngoSet.indexOf(b.ngoId) === -1) ngoSet.push(b.ngoId);
+  // ---------- pure ledger / ESG logic (no DOM) ----------
+  function postedAtOf(b) {
+    return b.postedAt !== undefined && b.postedAt !== null ? b.postedAt : eventAt(b, "Posted");
+  }
+
+  function deliveredAtOf(b) {
+    return b.deliveredAt !== undefined && b.deliveredAt !== null ? b.deliveredAt : eventAt(b, "Delivered");
+  }
+
+  // Totals across Delivered batches only; Expired batches never count.
+  function computeLedgerTotals(batches) {
+    var kgRescued = 0;
+    var turnSum = 0;
+    var turnCount = 0;
+    var ngoIds = [];
+    var deliveredCount = 0;
+    batches.forEach(function (b) {
+      if (b.status !== "Delivered") return;
+      deliveredCount += 1;
+      kgRescued += Number(b.kg) || 0;
+      var posted = postedAtOf(b);
+      var delivered = deliveredAtOf(b);
+      if (posted !== null && delivered !== null) {
+        turnSum += (delivered - posted) / MIN;
+        turnCount += 1;
+      }
+      if (b.ngoId && ngoIds.indexOf(b.ngoId) === -1) ngoIds.push(b.ngoId);
     });
-    var co2 = kg * D.CO2_FACTOR;
+    var meals = Math.round(kgRescued / MEAL_KG);
+    return {
+      meals: meals,
+      kgRescued: kgRescued,
+      co2Kg: Math.round(kgRescued * CO2_FACTOR * 10) / 10,
+      valueInr: meals * MEAL_VALUE_INR,
+      avgTurnaroundMin: turnCount ? Math.round(turnSum / turnCount) : 0,
+      deliveredCount: deliveredCount,
+      ngosServed: ngoIds.length
+    };
+  }
 
-    function stat(value, label) {
-      return '<div class="stat"><div class="value">' + value + '</div><div class="label">' + label + "</div></div>";
+  // ESG summary for one caterer, calendar month of nowMs. Expired batches are excluded.
+  function buildEsgSummary(caterer, batches, nowMs) {
+    var now = new Date(nowMs);
+    var year = now.getFullYear();
+    var month = now.getMonth();
+    function inThisMonth(ms) {
+      if (ms === null || ms === undefined) return false;
+      var d = new Date(ms);
+      return d.getFullYear() === year && d.getMonth() === month;
     }
-    $("impact-stats").innerHTML =
-      stat(servings.toLocaleString("en-IN"), "Servings rescued (illustrative)") +
-      stat(fmtNum(kg), "kg diverted (illustrative)") +
-      stat(fmtNum(co2), "kg CO2e avoided (illustrative)") +
-      stat(ngoSet.length, "NGOs served (synthetic)");
+    var rescues = 0;
+    var deliveredKg = 0;
+    var postedKg = 0;
+    batches.forEach(function (b) {
+      if (b.caterer !== caterer || b.status === "Expired") return;
+      var kg = Number(b.kg) || 0;
+      if (inThisMonth(postedAtOf(b))) postedKg += kg;
+      if (b.status === "Delivered" && inThisMonth(deliveredAtOf(b))) {
+        rescues += 1;
+        deliveredKg += kg;
+      }
+    });
+    var score = postedKg > 0 ? Math.round(100 * deliveredKg / postedKg) : 0;
+    return {
+      caterer: caterer,
+      monthLabel: now.toLocaleString("en-IN", { month: "long", year: "numeric" }),
+      monthlyRescues: rescues,
+      monthlyKg: deliveredKg,
+      monthlyMeals: Math.round(deliveredKg / MEAL_KG),
+      zeroWasteScore: Math.max(0, Math.min(100, score)),
+      co2Kg: Math.round(deliveredKg * CO2_FACTOR * 10) / 10
+    };
+  }
 
+  // ---------- render: view 3 (impact / ESG ledger) ----------
+  function kpiCardHtml(label, value, unit, extraCls) {
+    return '<div class="kpi-card' + (extraCls ? " " + extraCls : "") + '">' +
+      '<div class="kpi-label">' + esc(label) + "</div>" +
+      '<div class="kpi-value">' + esc(value) + "</div>" +
+      '<div class="kpi-unit">' + esc(unit) + "</div>" +
+      "</div>";
+  }
+
+  function renderLedgerKpis(t) {
+    var el = $("ledger-kpis");
+    if (!el) return;
+    el.innerHTML =
+      kpiCardHtml("Total Meals Served", fmtNum(t.meals), "meals \u00B7 value saved " + fmtInr(t.valueInr), "") +
+      kpiCardHtml("Edible Food Rescued", fmtNum(t.kgRescued), "kg", "") +
+      kpiCardHtml("CO2e Emissions Prevented", fmtNum(t.co2Kg), "kg CO2e", "kpi-emerald") +
+      kpiCardHtml("Average Rescue Turnaround Time", fmtNum(t.avgTurnaroundMin), "min", "");
+  }
+
+  function renderLedgerEvents() {
+    var body = $("ledger-events-body");
+    if (!body) return;
     var rows = [];
     state.batches.forEach(function (b) {
-      b.events.forEach(function (e) {
+      (b.events || []).forEach(function (e) {
         rows.push({ at: e.at, b: b, type: e.type });
       });
     });
     rows.sort(function (a, c) { return a.at - c.at; });
 
-    $("ledger-body").innerHTML = rows.length ? rows.map(function (r) {
+    body.innerHTML = rows.length ? rows.map(function (r) {
       var ngo = r.b.ngoId ? ngoById(r.b.ngoId) : null;
       return "<tr>" +
-        "<td>" + esc(new Date(r.at).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })) + "</td>" +
+        "<td>" + esc(hhmm(r.at)) + "</td>" +
         "<td>" + esc(r.b.id) + "</td>" +
         "<td>" + esc(r.b.caterer) + "</td>" +
         "<td>" + esc(r.type) + "</td>" +
@@ -773,6 +849,61 @@
         "<td>" + esc(r.b.rider || "-") + "</td>" +
         "</tr>";
     }).join("") : '<tr><td colspan="6">No events yet.</td></tr>';
+  }
+
+  function renderImpact() {
+    renderLedgerKpis(computeLedgerTotals(state.batches));
+    renderLedgerEvents();
+  }
+
+  // Caterer dropdown: unique names, current selection kept when still present.
+  function populateEsgSelect() {
+    var sel = $("esg-caterer-select");
+    if (!sel) return;
+    var prev = sel.value;
+    var names = [];
+    state.batches.forEach(function (b) {
+      if (names.indexOf(b.caterer) === -1) names.push(b.caterer);
+    });
+    names.sort();
+    sel.innerHTML = names.map(function (n) {
+      return '<option value="' + esc(n) + '">' + esc(n) + "</option>";
+    }).join("");
+    if (names.indexOf(prev) !== -1) sel.value = prev;
+  }
+
+  function renderEsgPreview(s) {
+    var box = $("esg-report-preview");
+    if (!box) return;
+    if (!s) {
+      box.innerHTML = '<p class="hint">No caterer selected</p>';
+      return;
+    }
+    box.innerHTML =
+      '<div class="esg-report">' +
+      "<h3>" + esc("Caterer ESG Impact Report \u2014 " + s.caterer + " \u2014 " + s.monthLabel) + "</h3>" +
+      "<ul>" +
+      "<li>" + esc("Monthly rescues: " + s.monthlyRescues) + "</li>" +
+      "<li>" + esc("Food rescued: " + fmtNum(s.monthlyKg) + " kg") + "</li>" +
+      "<li>" + esc("Meals equivalent: " + fmtNum(s.monthlyMeals) + " meals (kg \u00F7 0.4)") + "</li>" +
+      "<li>" + esc("CO2e prevented: " + fmtNum(s.co2Kg) + " kg (kg \u00D7 2.5)") + "</li>" +
+      "<li>" + esc("Zero-waste score: " + s.zeroWasteScore + "% (Delivered kg \u00F7 posted kg this month \u00D7 100)") + "</li>" +
+      "</ul>" +
+      '<p class="hint">' + esc("Illustrative / synthetic. Operational sustainability report, not a tax-exemption certificate.") + "</p>" +
+      "</div>";
+  }
+
+  function onEsgGenerate() {
+    var sel = $("esg-caterer-select");
+    var printBtn = $("esg-print-btn");
+    var name = sel ? sel.value : "";
+    if (!name) {
+      renderEsgPreview(null);
+      if (printBtn) printBtn.classList.add("hidden");
+      return;
+    }
+    renderEsgPreview(buildEsgSummary(name, state.batches, Date.now()));
+    if (printBtn) printBtn.classList.remove("hidden");
   }
 
   // ---------- render: view 4 (ROI) ----------
@@ -816,6 +947,7 @@
   };
 
   function renderAll() {
+    populateEsgSelect();
     renderCatererList();
     renderFeed();
     renderImpact();
@@ -888,6 +1020,16 @@
     readRoiInputs();
     renderRoiOutputs();
   });
+
+  var esgGenBtn = $("esg-generate-btn");
+  if (esgGenBtn) esgGenBtn.addEventListener("click", onEsgGenerate);
+  var esgPrintBtn = $("esg-print-btn");
+  if (esgPrintBtn) {
+    esgPrintBtn.addEventListener("click", function () {
+      if (typeof window.print === "function") window.print();
+    });
+  }
+
 
   // ---------- init ----------
   $("legal-text").textContent = D.DISCLAIMER;

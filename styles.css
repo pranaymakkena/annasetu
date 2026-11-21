@@ -522,3 +522,87 @@ input[type="range"] {
   .modal-card { padding: 16px; }
 }
 
+
+/* ---------- Impact & ESG Ledger ---------- */
+/* .hidden is already defined above (display: none !important); not redefined here. */
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+@media (min-width: 640px) {
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (min-width: 1024px) {
+  .kpi-grid { grid-template-columns: repeat(4, 1fr); }
+}
+
+.kpi-card {
+  background: var(--bg);
+  border: 1px solid #94a3b8;
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(30, 41, 59, 0.12);
+}
+.kpi-value {
+  font-size: 2rem;
+  font-weight: 800;
+  color: #0f172a;
+  line-height: 1.1;
+}
+.kpi-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-weight: 700;
+}
+.kpi-unit {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.kpi-card.kpi-emerald .kpi-value { color: var(--emerald); }
+
+.method-box {
+  background: #fff7e6;
+  border-left: 4px solid var(--saffron);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+.method-box li { margin-bottom: 6px; }
+
+.esg-card {
+  background: var(--panel);
+  border: 1px solid #94a3b8;
+  border-radius: var(--radius);
+  padding: 20px;
+  max-width: 720px;
+}
+.esg-report {
+  border: 1px dashed #94a3b8;
+  padding: 16px;
+}
+.esg-note {
+  font-size: 0.8rem;
+  font-style: italic;
+  color: var(--muted);
+  margin-top: 12px;
+}
+
+@media print {
+  .no-print,
+  nav,
+  footer,
+  .tabs,
+  button,
+  select,
+  label { display: none !important; }
+  body { background: #fff; }
+  .esg-card {
+    box-shadow: none;
+    border: none;
+    max-width: 100%;
+  }
+}
+
