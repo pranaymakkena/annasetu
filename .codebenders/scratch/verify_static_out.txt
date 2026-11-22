@@ -1,0 +1,98 @@
+[3] app.js: {} 583/583 EQUAL | () 2547/2547 EQUAL | [] 192/192 EQUAL
+[3] index.html (script blocks removed): {} 0/0 EQUAL | () 36/36 EQUAL | [] 0/0 EQUAL
+[3] styles.css: {} 596/596 EQUAL | () 389/389 EQUAL | [] 22/22 EQUAL
+[4] function renderCorridorMap( defs: 1
+[4] function renderCorridorEta( defs: 1
+[4] function renderRadarPopover( defs: 1
+[4] function startRadarAnimation( defs: 1
+[4] function bindRadarListeners( defs: 1
+[4] function geoToXY( defs: 1
+[4] CORRIDOR_POS occurrences: 0
+[4] bindRadarListeners( occurrences: 2
+[5] id="corridor-popover" count: 1
+[5] id="corridor-map" count: 1
+[5] ref toast-container OK app.js:107
+[5] ref handling-modal OK app.js:397,421
+[5] ref handling-body OK app.js:398
+[5] ref donate-form OK app.js:438,590,667,1931,1962,3378
+[5] ref food OK app.js:466
+[5] ref diet OK app.js:467
+[5] ref food-custom-wrap OK app.js:468
+[5] ref kg-slider OK app.js:474,532,574,672,1972
+[5] ref meals-readout OK app.js:480
+[5] ref effective-deadline OK app.js:488,490,492
+[5] ref match-preview OK app.js:496
+[5] ref food-custom OK app.js:559,573
+[5] ref locality-select OK app.js:575,592,668,1027,1967
+[5] ref donate-msg OK app.js:589
+[5] ref waste-insight-text OK app.js:686
+[5] ref caterer-filter OK app.js:988,3384
+[5] ref caterer-list OK app.js:1010
+[5] ref ngo-panel OK app.js:1036,3194
+[5] ref header-locality-select OK app.js:1094,3399
+[5] ref dispatch-filters OK app.js:1105,3361
+[5] ref feed-msg OK app.js:1118,3227
+[5] ref feed-posted OK app.js:1123,3214
+[5] ref feed-active OK app.js:1132,3215
+[5] ref queue-rail-list OK app.js:1145
+[5] ref ledger-kpis OK app.js:1301
+[5] ref ledger-events-body OK app.js:1337
+[5] ref category-bars OK app.js:1439
+[5] ref esg-caterer-select OK app.js:1476,1511
+[5] ref esg-report-preview OK app.js:1491
+[5] ref esg-print-btn OK app.js:1512,3417
+[5] ref roi-chart MISSING in index.html app.js:1598
+[5] ref kpi-grid OK app.js:1600,1652
+[5] ref revenue-streams OK app.js:1694
+[5] ref value-matrix OK app.js:1728
+[5] ref reset-msg OK app.js:1773
+[5] ref role-status MISSING in index.html app.js:1884
+[5] ref role-select OK app.js:1928,3450
+[5] ref btn-simulate-rescue OK app.js:2019,3412
+[5] ref city-status-pill OK app.js:2100
+[5] ref persona-banner OK app.js:2468
+[5] ref persona-insight MISSING in index.html app.js:2479
+[5] ref corridor-popover OK app.js:2683,2732,2773
+[5] ref corridor-map OK app.js:2694,2716,2772,2812
+[5] ref route- MISSING in index.html app.js:2702
+[5] ref corridor-eta-list OK app.js:2886
+[5] ref ngo-network-grid OK app.js:2913
+[5] ref ngo-capacity-bars OK app.js:2939,3196
+[5] ref split-claim-panel OK app.js:2954,3197
+[5] ref est-output MISSING in index.html app.js:2977
+[5] ref est-hours MISSING in index.html app.js:2978
+[5] ref est-storage MISSING in index.html app.js:2989
+[5] ref safety-checklist OK app.js:3008
+[5] ref safety-monitor OK app.js:3019
+[5] ref safety-estimator OK app.js:3042,3460
+[5] ref esg-kpis OK app.js:3049
+[5] ref esg-methodology OK app.js:3075,3086
+[5] ref btn-esg-methodology OK app.js:3089,3465
+[5] ref rider-mission OK app.js:3203
+[5] ref feed-annapurna-summary MISSING in index.html app.js:3225
+[5] ref btn-autofill-wedding OK app.js:3371
+[5] ref btn-download-csv OK app.js:3374
+[5] ref header-search-input OK app.js:3390
+[5] ref reset-demo-btn OK app.js:3409
+[5] ref esg-generate-btn OK app.js:3415
+[5] ref hero-cta OK app.js:3425
+[5] ref legal-text OK app.js:3439
+[5] dynamic $() app.js:78: function $(id) { return document.getElementById(id); }
+[5] dynamic $() app.js:1525: var el = $(id);
+[5] dynamic $() app.js:1531: var el = $(id);
+[5] dynamic $() app.js:1544: var el = $(id);
+[5] dynamic $() app.js:1744: var el = $(id);
+[5] dynamic $() app.js:2404: var el = $(id);
+[6] v13 marker lines: 1664: /* ===== v13 interactive corridor map ===== */ | 1696: /* ===== end v13 ===== */
+[6] .corridor-popover rules: ["1685: .corridor-popover { position: absolute; top: 12px; right: 12px; width: min(280px, calc(100% - 24px)); background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 14px; box-shadow: 0 12px 28px rgba(15,23,42,.16); padding: 14px 16px; z-index: 5; display: grid; gap: 8px; color: #334155; font-size: .85rem; }","1686: .corridor-popover[hidden] { display: none; }","1687: .corridor-popover-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-weight: 700; color: #0F172A; }","1688: .corridor-popover dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; margin: 0; }","1689: .corridor-popover dt { color: #64748B; font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; }","1690: .corridor-popover dd { margin: 0; color: #0F172A; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }","1691: .corridor-popover-actions { display: flex; gap: 8px; flex-wrap: wrap; }","1692: .corridor-popover-actions button { height: 34px; padding: 0 12px; border-radius: 10px; border: 1.5px solid #CBD5E1; background: #FFFFFF; font: inherit; font-weight: 600; cursor: pointer; }","1693: .corridor-popover-actions button[data-action=\"radar-play\"] { background: #059669; border-color: #059669; color: #FFFFFF; }","1694: @media (prefers-color-scheme: dark) { .corridor-popover { background: #111827; border-color: #1F2937; color: #CBD5E1; } .corridor-popover-head, .corridor-popover dd { color: #F1F5F9; } .corridor-popover-actions button:not([data-action=\"radar-play\"]) { background: #111827; color: #E2E8F0; border-color: #334155; } }","1695: @media (max-width: 640px) { .corridor-popover { position: static; width: 100%; margin-top: 10px; box-shadow: none; } }"]
+[6] .radar-route rules: ["911: .radar-route { fill: none; stroke: #059669; stroke-width: 2.5; stroke-dasharray: 5 4; }","1681: .radar-route { fill: none; stroke: var(--map-route); stroke-width: 2.5; stroke-dasharray: 6 5; }"]
+[7] app.js:12 [illustrative] // Assumption (illustrative, not sourced): blended raw-food cost of one kg of surplus, INR per kg.
+[7] app.js:1243 [illustrative] // Illustrative planning assumptions (not measured, not sourced). They drive only the cost-per-meal KPI:
+[7] app.js:1783 [Synthetic demo] // ---------- persistence (localStorage, synthetic demo only) ----------
+[7] app.js:2180 [certif] // Ramesh: download a plain-text logistics record for one Delivered batch. No tax or certification claim.
+[7] app.js:2181 [certif] function downloadCsrCertificate(id) {
+[7] app.js:2192 [Synthetic demo] "Synthetic demo record. Logistics only."
+[7] app.js:2378 [certif] if (action === "csr-cert") changed = downloadCsrCertificate(id);
+[7] index.html:420 [certif] <p id="legal-text" class="legal">All values, entities, coordinates, and metrics shown are synthetic for demonstration purposes. AnnaSetu coordinates logistics only, does not certify food safety, and makes no tax or legal benefit claims.</p>
+[7] styles.css:1350 [certif] /* ---------- Print: ESG certificate only ---------- */
+[7] data.js:15 [certif] "Disclaimer: AnnaSetu is a logistics coordination platform only. We do not inspect, test, or certify food safety, nor do we guarantee tax deductions or legal exemptions. Receivers must verify food condition upon pickup.";

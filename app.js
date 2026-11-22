@@ -59,6 +59,8 @@
     dispatchFilter: "all",
     // Manual NGO override choices per Posted batch id; kept across re-renders.
     overrides: {},
+    // Batch id of the open corridor radar popover (session only; not saved).
+    radarSelected: null,
     // Draft choices for the donate form. kg/meals are read from the slider on each change.
     donate: { foodChoice: "", customFood: "", diet: "", kg: 20, meals: 50, windowHours: null,
       cookedHoursAgo: null, storage: "", allergens: [], packaging: "" }
@@ -2118,16 +2120,6 @@
   var riderSteps = {};
   var estimatorBuilt = false;
   var methodologyBuilt = false;
-  // Fixed schematic positions in the 680 x 420 corridor viewBox (about 1.7x / 1.4x the old layout).
-  // Names match LOCALITY_LIST. Hitech City is the hub. Pairwise spacing is at least 110 px.
-  var CORRIDOR_POS = {
-    "Madhapur": { x: 255, y: 168 },
-    "Gachibowli": { x: 153, y: 266 },
-    "Kondapur": { x: 391, y: 126 },
-    "Jubilee Hills": { x: 510, y: 238 },
-    "Hitech City": { x: 306, y: 294 },
-    "Banjara Hills": { x: 580, y: 350 }
-  };
 
   function isActiveBatch(b) { return b.status !== "Delivered" && b.status !== "Expired"; }
 
@@ -2159,9 +2151,6 @@
   // ETA in minutes at the 25 km/h rule.
   function etaMinFor(ngo) { return Math.round(Number(ngo.distance_km) / 25 * 60); }
 
-  function corridorPos(name) {
-    return Object.prototype.hasOwnProperty.call(CORRIDOR_POS, name) ? CORRIDOR_POS[name] : null;
-  }
 
   // Persona filter. scope "caterer" = caterer list, "feed" = dispatch feed.
   function personaAllows(b, scope) {
@@ -2530,134 +2519,367 @@
       esc(label) + "</text>";
   }
 
-  // Corridor map (viewBox 680x420): legend, grid and glow, range rings, river and ring road,
-  // localities, caterer pins (ring = safe window), NGO shelter pins, routes and live rider dots.
+  // ---------- corridor radar: schematic Hyderabad map (not to true scale) ----------
+  // Projection bounds for the 680 x 420 viewBox. y grows downward, so latitude is inverted.
+  var LNG_MIN = 78.33;
+  var LNG_MAX = 78.53;
+  var LAT_MIN = 17.35;
+  var LAT_MAX = 17.50;
+  // Places that are not in data.js LOCALITIES (app-only constants).
+  var RADAR_EXTRA_PLACES = {
+    "Begumpet": { lat: 17.4439, lng: 78.4664 },
+    "Secunderabad": { lat: 17.4399, lng: 78.4983 }
+  };
+  var HUSSAIN_SAGAR = { lat: 17.4239, lng: 78.4738 };
+  var RADAR_ZONES = ["Madhapur", "Hitech City", "Gachibowli", "Banjara Hills", "Jubilee Hills", "Begumpet", "Secunderabad"];
+  var RADAR_SPEED_KMH = 25;
+  var RADAR_CYCLE_MS = 6000;
+  // Module-level animation state: rAF handle, animation clock start, and one-time listener flag.
+  var radarAnim = null;
+  var radarAnimStart = null;
+  var radarBound = false;
+
+  // Lat/lng to viewBox x/y, clamped inside the frame.
+  function geoToXY(lat, lng) {
+    var x = (Number(lng) - LNG_MIN) * (680 / (LNG_MAX - LNG_MIN));
+    var y = (LAT_MAX - Number(lat)) * (420 / (LAT_MAX - LAT_MIN));
+    if (!isFinite(x)) x = 340;
+    if (!isFinite(y)) y = 210;
+    return { x: Math.min(668, Math.max(12, x)), y: Math.min(408, Math.max(12, y)) };
+  }
+
+  // Coordinates for a locality name, or null when it is unknown.
+  function radarPlace(name) {
+    var table = (D && D.LOCALITIES) || {};
+    if (Object.prototype.hasOwnProperty.call(table, name)) return table[name];
+    if (Object.prototype.hasOwnProperty.call(RADAR_EXTRA_PLACES, name)) return RADAR_EXTRA_PLACES[name];
+    return null;
+  }
+
+  // Smooth open curve through projected points (Catmull-Rom converted to cubic segments).
+  function radarSmoothPath(pts) {
+    if (!pts || pts.length < 2) return "";
+    var d = "M " + pts[0].x.toFixed(1) + " " + pts[0].y.toFixed(1);
+    for (var i = 0; i < pts.length - 1; i++) {
+      var p0 = pts[i - 1] || pts[i];
+      var p1 = pts[i];
+      var p2 = pts[i + 1];
+      var p3 = pts[i + 2] || p2;
+      var c1x = p1.x + (p2.x - p0.x) / 6;
+      var c1y = p1.y + (p2.y - p0.y) / 6;
+      var c2x = p2.x - (p3.x - p1.x) / 6;
+      var c2y = p2.y - (p3.y - p1.y) / 6;
+      d += " C " + c1x.toFixed(1) + " " + c1y.toFixed(1) + " " + c2x.toFixed(1) + " " + c2y.toFixed(1) +
+        " " + p2.x.toFixed(1) + " " + p2.y.toFixed(1);
+    }
+    return d;
+  }
+
+  // Projects a list of [lat, lng] pairs.
+  function radarProjectList(list) {
+    return list.map(function (p) { return geoToXY(p[0], p[1]); });
+  }
+
+  // Pin position: locality centre plus a pixel offset, kept inside the frame.
+  function radarOffset(geo, dx, dy) {
+    var p = geoToXY(geo.lat, geo.lng);
+    return { x: Math.min(668, Math.max(12, p.x + dx)), y: Math.min(408, Math.max(12, p.y + dy)) };
+  }
+
+  function radarReducedMotion() {
+    return !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  }
+
+  // Route progress 0..1. Claimed riders wait at 0.30; Collected riders loop every 6 s; reduced motion uses 0.5.
+  function radarProgress(status, now, reduced) {
+    if (status === "Claimed") return 0.3;
+    if (status !== "Collected") return 0;
+    if (reduced) return 0.5;
+    var start = radarAnimStart === null ? now : radarAnimStart;
+    return ((((now - start) % RADAR_CYCLE_MS) + RADAR_CYCLE_MS) % RADAR_CYCLE_MS) / RADAR_CYCLE_MS;
+  }
+
+  // Live remaining km and ETA minutes for a batch on a route; null when it has no route.
+  function radarReadout(b, now) {
+    if (!b || (b.status !== "Claimed" && b.status !== "Collected") || !b.ngoId) return null;
+    var ngo = ngoById(b.ngoId);
+    if (!ngo) return null;
+    var dist = Number(ngo.distance_km);
+    if (!isFinite(dist) || dist < 0) dist = 0;
+    var p = radarProgress(b.status, now, radarReducedMotion());
+    var remaining = (1 - p) * dist;
+    return { km: remaining, eta: Math.max(4, Math.round(remaining / RADAR_SPEED_KMH * 60)) };
+  }
+
+  // Short rider tag: an "R-07" style token, else the last name token, else "EV".
+  function radarRiderTag(name) {
+    var text = String(name || "").trim();
+    if (!text) return "EV";
+    var m = /R-\d+/.exec(text);
+    if (m) return m[0];
+    var parts = text.split(/\s+/);
+    return parts[parts.length - 1];
+  }
+
+  function radarLegendHtml() {
+    return '<div class="radar-legend">' +
+      '<span class="radar-legend-item"><span class="radar-legend-swatch" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#F59E0B"></span>Kitchen pickup</span>' +
+      '<span class="radar-legend-item"><span class="radar-legend-swatch" style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#059669"></span>NGO drop-off</span>' +
+      '<span class="radar-legend-item"><span class="radar-legend-swatch" style="display:inline-block;width:14px;height:0;border-top:2px dashed #64748B"></span>Route</span>' +
+      '<span class="radar-legend-item"><span class="radar-legend-swatch" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#2563EB"></span>EV rider</span>' +
+      "</div>";
+  }
+
+  // Landmarks drawn before pins: Musi River, Hussain Sagar, Outer Ring Road and the zone labels.
+  function radarLandmarksHtml() {
+    var s = "";
+    var river = radarProjectList([[17.42, 78.36], [17.39, 78.40], [17.38, 78.45], [17.39, 78.49]]);
+    s += '<path class="map-river" d="' + radarSmoothPath(river) + '" fill="none" stroke="#BAE6FD" stroke-width="8" ' +
+      'stroke-linecap="round" opacity="0.7"></path>' +
+      '<text class="map-muted" x="' + river[1].x.toFixed(1) + '" y="' + (river[1].y + 16).toFixed(1) +
+      '" font-size="10" font-style="italic" fill="#64748B">Musi River</text>';
+
+    var hs = geoToXY(HUSSAIN_SAGAR.lat, HUSSAIN_SAGAR.lng);
+    s += '<ellipse class="map-water" cx="' + hs.x.toFixed(1) + '" cy="' + hs.y.toFixed(1) +
+      '" rx="26" ry="14" fill="#BFDBFE" stroke="#93C5FD" stroke-width="1"></ellipse>' +
+      '<text class="map-muted" x="' + hs.x.toFixed(1) + '" y="' + (hs.y + 28).toFixed(1) +
+      '" text-anchor="middle" font-size="10" font-style="italic" fill="#64748B">Hussain Sagar</text>';
+
+    var orr = radarProjectList([[17.50, 78.33], [17.46, 78.31], [17.40, 78.32], [17.36, 78.37], [17.36, 78.44]]);
+    s += '<path class="map-orr" d="' + radarSmoothPath(orr) + '" fill="none" stroke="#E2E8F0" stroke-width="6" ' +
+      'stroke-linecap="round"></path>' +
+      '<text class="map-muted" x="' + (orr[2].x + 6).toFixed(1) + '" y="' + orr[2].y.toFixed(1) +
+      '" font-size="10" font-weight="600" fill="#64748B">ORR</text>';
+
+    RADAR_ZONES.forEach(function (name) {
+      var geo = radarPlace(name);
+      if (!geo) return;
+      var c = geoToXY(geo.lat, geo.lng);
+      var w = Math.round(name.length * 6.4 + 16);
+      s += '<circle class="map-dot" cx="' + c.x.toFixed(1) + '" cy="' + c.y.toFixed(1) + '" r="3" fill="#94A3B8"></circle>' +
+        '<rect class="map-pill" x="' + (c.x - w / 2).toFixed(1) + '" y="' + (c.y + 10).toFixed(1) + '" width="' + w +
+        '" height="16" rx="6" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1"></rect>' +
+        '<text class="map-label" x="' + c.x.toFixed(1) + '" y="' + (c.y + 22).toFixed(1) +
+        '" text-anchor="middle" font-size="11" fill="#334155">' + esc(name) + "</text>";
+    });
+    return s;
+  }
+
+  function stopRadarAnimation() {
+    if (radarAnim !== null && typeof cancelAnimationFrame === "function") cancelAnimationFrame(radarAnim);
+    radarAnim = null;
+  }
+
+  function radarFindBatch(id) {
+    var found = null;
+    state.batches.forEach(function (b) {
+      if (!found && String(b.id) === String(id)) found = b;
+    });
+    return found;
+  }
+
+  // Writes live km and ETA into the open popover when it shows this batch.
+  function radarWriteReadout(bid, now) {
+    var pop = $("corridor-popover");
+    if (!pop) return;
+    var r = radarReadout(radarFindBatch(bid), now);
+    var etaEl = pop.querySelector("[data-radar-eta]");
+    var kmEl = pop.querySelector("[data-radar-km]");
+    if (r && etaEl) etaEl.textContent = r.eta + " min";
+    if (r && kmEl) kmEl.textContent = r.km.toFixed(1) + " km";
+  }
+
+  // Moves every rider marker along its route. Returns true while any Collected rider is moving.
+  function radarMoveRiders(now, reduced) {
+    var el = $("corridor-map");
+    if (!el) return false;
+    var moving = false;
+    var markers = el.querySelectorAll(".radar-rider[data-batch-id]");
+    for (var i = 0; i < markers.length; i++) {
+      var m = markers[i];
+      var bid = m.getAttribute("data-batch-id");
+      var status = m.getAttribute("data-rider-status");
+      var route = document.getElementById("route-" + bid);
+      if (!route || typeof route.getPointAtLength !== "function") continue;
+      var p = radarProgress(status, now, reduced);
+      if (status === "Collected" && !reduced) moving = true;
+      var pt = route.getPointAtLength(p * route.getTotalLength());
+      m.setAttribute("transform", "translate(" + pt.x.toFixed(1) + " " + pt.y.toFixed(1) + ")");
+      if (status === "Collected" && state.radarSelected === bid) radarWriteReadout(bid, now);
+    }
+    return moving;
+  }
+
+  // Starts the rider animation loop. Cancels any previous frame and stops when no rider is moving.
+  function startRadarAnimation() {
+    stopRadarAnimation();
+    var el = $("corridor-map");
+    if (!el || !el.querySelector(".radar-rider")) return;
+    var reduced = radarReducedMotion();
+    if (radarAnimStart === null) radarAnimStart = Date.now();
+    function frame() {
+      radarAnim = null;
+      var moving = radarMoveRiders(Date.now(), reduced);
+      if (moving && !reduced && typeof requestAnimationFrame === "function") {
+        radarAnim = requestAnimationFrame(frame);
+      }
+    }
+    frame();
+  }
+
+  // Detail card for the selected batch. Hides the popover when the batch is not found.
+  function renderRadarPopover() {
+    var pop = $("corridor-popover");
+    if (!pop) return;
+    var b = state.radarSelected ? radarFindBatch(state.radarSelected) : null;
+    if (!b) {
+      state.radarSelected = null;
+      pop.hidden = true;
+      pop.innerHTML = "";
+      return;
+    }
+    var now = Date.now();
+    var kg = Number(b.kg) || 0;
+    var servings = Number(b.servings);
+    var meals = isFinite(servings) && servings > 0 ? Math.round(servings) : mealsFor(kg);
+    var temp = b.tempChecked ? "Temperature checked" : "Check pending at pickup";
+    var storage = b.storage ? b.storage : "Storage not recorded";
+    var r = radarReadout(b, now);
+    var etaText = r ? r.eta + " min" : "Not on a route yet";
+    var kmText = r ? r.km.toFixed(1) + " km" : "Not on a route yet";
+    pop.innerHTML = '<article class="radar-pop-card">' +
+      '<header class="radar-pop-head"><h3 class="radar-pop-title">Batch ID ' + esc(b.id) + "</h3>" +
+      '<button type="button" class="btn btn-secondary" data-action="radar-close">Close</button></header>' +
+      '<p class="radar-pop-row"><span class="radar-pop-label">Dish</span> ' + esc(b.food || "-") + "</p>" +
+      '<p class="radar-pop-row"><span class="radar-pop-label">Meals</span> ' + esc(meals) + "</p>" +
+      '<p class="radar-pop-row"><span class="radar-pop-label">Temperature</span> ' + esc(temp) +
+      ' <span class="radar-pop-tag">' + esc(storage) + "</span></p>" +
+      '<p class="radar-pop-row"><span class="radar-pop-label">EV rider</span> ' +
+      esc(b.rider ? b.rider : "Unassigned") + "</p>" +
+      '<p class="radar-pop-row"><span class="radar-pop-label">Live ETA</span> <span data-radar-eta>' +
+      esc(etaText) + "</span></p>" +
+      '<p class="radar-pop-row"><span class="radar-pop-label">Remaining</span> <span data-radar-km>' +
+      esc(kmText) + "</span></p>" +
+      '<footer class="radar-pop-foot"><button type="button" class="btn btn-primary" data-action="radar-play">Play route</button></footer>' +
+      "</article>";
+    pop.hidden = false;
+  }
+
+  // Delegated listeners for the map pins and the popover. Attached once from init.
+  function bindRadarListeners() {
+    if (radarBound) return;
+    radarBound = true;
+    var map = $("corridor-map");
+    var pop = $("corridor-popover");
+    function pinFrom(target) {
+      var node = target && target.closest ? target : null;
+      return node ? node.closest(".radar-pin") : null;
+    }
+    if (map) {
+      map.addEventListener("click", function (e) {
+        var pin = pinFrom(e.target);
+        if (!pin) return;
+        state.radarSelected = pin.getAttribute("data-batch-id");
+        renderRadarPopover();
+      });
+      map.addEventListener("keydown", function (e) {
+        if (e.key !== "Enter") return;
+        var pin = pinFrom(e.target);
+        if (!pin) return;
+        e.preventDefault();
+        state.radarSelected = pin.getAttribute("data-batch-id");
+        renderRadarPopover();
+      });
+    }
+    if (pop) {
+      pop.addEventListener("click", function (e) {
+        var btn = e.target && e.target.closest ? e.target.closest("[data-action]") : null;
+        if (!btn) return;
+        var action = btn.getAttribute("data-action");
+        if (action === "radar-close") {
+          state.radarSelected = null;
+          renderRadarPopover();
+        } else if (action === "radar-play") {
+          radarAnimStart = Date.now();
+          startRadarAnimation();
+        }
+      });
+    }
+  }
+
+  // Corridor map (viewBox 680x420): landmarks, routes, kitchen and NGO pins, and EV rider markers.
   function renderCorridorMap() {
     var el = $("corridor-map");
     if (!el) return;
-    var now = Date.now();
-    var hub = corridorPos("Hitech City") || { x: 306, y: 294 };
-    var names = Object.keys(CORRIDOR_POS);
+    var legend = radarLegendHtml();
+    var shown = state.batches.filter(function (b) { return matchesFilters(b); });
+    if (!shown.length) {
+      stopRadarAnimation();
+      el.innerHTML = legend + '<p class="empty-state">No corridor batches match the current filters.</p>';
+      renderRadarPopover();
+      return;
+    }
 
-    // NGO shelter pins: right of and below their locality dot, stacked per locality.
-    var ngoPin = {};
-    var ngoCount = {};
-    state.ngos.forEach(function (n) {
-      var p = corridorPos(n.locality);
-      if (!p) return;
-      var k = ngoCount[n.locality] || 0;
-      ngoCount[n.locality] = k + 1;
-      ngoPin[n.id] = { x: p.x + 16, y: p.y + 50 + 24 * k, ngo: n };
-    });
+    var routeHtml = "";
+    var pinHtml = "";
+    var riderHtml = "";
+    shown.forEach(function (b, i) {
+      var geo = radarPlace(b.locality);
+      if (!geo) return;
+      var expired = b.status === "Expired";
+      var bid = esc(b.id);
+      var kp = radarOffset(geo, (i % 3 - 1) * 14, -Math.floor(i / 3) * 14 - 6);
+      pinHtml += '<g class="radar-pin" data-batch-id="' + bid + '" data-pin="kitchen" tabindex="0" role="button" aria-label="' +
+        esc("Kitchen pickup " + b.id + ", " + (b.caterer || "") + ", " + (b.locality || "")) + '">' +
+        '<circle class="pin-kitchen" cx="' + kp.x.toFixed(1) + '" cy="' + kp.y.toFixed(1) + '" r="8" fill="' +
+        (expired ? "#94A3B8" : "#F59E0B") + '" stroke="#FFFFFF" stroke-width="2"></circle></g>';
 
-    // Caterer pins: left of and above their locality dot, stacked per locality.
-    var catPin = {};
-    var catCount = {};
-    state.batches.filter(isActiveBatch).forEach(function (b) {
-      var p = corridorPos(b.locality);
-      if (!p) return;
-      var k = catCount[b.locality] || 0;
-      catCount[b.locality] = k + 1;
-      var mins = safeMinsLeft(b, now);
-      catPin[b.id] = { x: p.x - 16, y: p.y - 30 - 24 * k, b: b, mins: mins, cls: safeClass(mins) };
-    });
+      // Expired batches keep the grey kitchen pin only.
+      if (expired || !b.ngoId) return;
+      var ngo = ngoById(b.ngoId);
+      var nGeo = ngo ? radarPlace(ngo.locality) : null;
+      if (!ngo || !nGeo) return;
+      var np = radarOffset(nGeo, 14, 6);
+      pinHtml += '<g class="radar-pin" data-batch-id="' + bid + '" data-pin="ngo" data-ngo-id="' + esc(ngo.id) +
+        '" tabindex="0" role="button" aria-label="' + esc("NGO drop-off " + ngo.name + " for " + b.id) + '">' +
+        '<rect class="pin-ngo" x="' + (np.x - 6).toFixed(1) + '" y="' + (np.y - 6).toFixed(1) +
+        '" width="12" height="12" rx="2" fill="#059669" stroke="#FFFFFF" stroke-width="1.5"></rect></g>';
 
-    // Routes: Claimed or Collected batches with an assigned NGO that is on the map.
-    var routes = [];
-    state.batches.forEach(function (b) {
       if (b.status !== "Claimed" && b.status !== "Collected") return;
-      var from = catPin[b.id];
-      var to = b.ngoId ? ngoPin[b.ngoId] : null;
-      if (!from || !to) return;
-      routes.push({ b: b, from: from, to: to, idx: routes.length });
+      // Quadratic route: control point offset 30 px perpendicular to the chord.
+      var mx = (kp.x + np.x) / 2;
+      var my = (kp.y + np.y) / 2;
+      var dx = np.x - kp.x;
+      var dy = np.y - kp.y;
+      var len = Math.sqrt(dx * dx + dy * dy) || 1;
+      var cx = mx + (-dy / len) * 30;
+      var cy = my + (dx / len) * 30;
+      routeHtml += '<path class="radar-route" id="route-' + bid + '" d="M ' + kp.x.toFixed(1) + " " + kp.y.toFixed(1) +
+        " Q " + cx.toFixed(1) + " " + cy.toFixed(1) + " " + np.x.toFixed(1) + " " + np.y.toFixed(1) +
+        '" fill="none" stroke="#64748B" stroke-width="2" stroke-dasharray="6 5"></path>';
+
+      // Rider marker starts at the route start; startRadarAnimation() places it.
+      riderHtml += '<g class="radar-rider" data-batch-id="' + bid + '" data-rider-status="' + esc(b.status) +
+        '" transform="translate(' + kp.x.toFixed(1) + " " + kp.y.toFixed(1) + ')">' +
+        '<circle r="6" fill="#2563EB" stroke="#FFFFFF" stroke-width="1.5"></circle>' +
+        '<rect x="-20" y="-24" width="40" height="14" rx="6" fill="#FFFFFF" stroke="#2563EB" stroke-width="1"></rect>' +
+        '<text x="0" y="-14" text-anchor="middle" font-size="9" fill="#1E3A8A">' + esc(radarRiderTag(b.rider)) +
+        "</text></g>";
     });
 
-    var defs = "<defs>" +
+    var svg = '<svg class="corridor-svg" viewBox="0 0 680 420" role="img" aria-label="Hyderabad IT corridor dispatch map">' +
+      "<defs>" +
       '<pattern id="corridor-grid" width="34" height="34" patternUnits="userSpaceOnUse">' +
       '<path d="M 34 0 L 0 0 0 34" fill="none" stroke="#E2E8F0" stroke-width="0.6"></path></pattern>' +
-      '<radialGradient id="corridor-glow" cx="50%" cy="50%" r="50%">' +
-      '<stop offset="0%" stop-color="#D1FAE5" stop-opacity="1"></stop>' +
-      '<stop offset="100%" stop-color="#D1FAE5" stop-opacity="0"></stop></radialGradient>' +
-      routes.map(function (r) {
-        return '<path id="corridor-route-' + r.idx + '" d="M ' + r.from.x + " " + r.from.y + " L " +
-          r.to.x + " " + r.to.y + '" fill="none" stroke="none"></path>';
-      }).join("") +
-      "</defs>";
-
-    var s = '<rect x="0" y="0" width="680" height="420" fill="#F8FAFC"></rect>' +
+      "</defs>" +
+      '<rect class="map-bg" x="0" y="0" width="680" height="420" fill="#F8FAFC"></rect>' +
       '<rect x="0" y="0" width="680" height="420" fill="url(#corridor-grid)"></rect>' +
-      '<circle cx="' + hub.x + '" cy="' + hub.y + '" r="170" fill="url(#corridor-glow)"></circle>';
-
-    [80, 160, 240].forEach(function (radius) {
-      s += '<circle class="corridor-range" cx="' + hub.x + '" cy="' + hub.y + '" r="' + radius +
-        '" fill="none" stroke="#CBD5E1" stroke-width="1" stroke-dasharray="4 4"></circle>';
-    });
-
-    s += '<path class="corridor-river" d="M 0 150 C 140 120 220 300 360 250 S 560 130 680 190" fill="none" ' +
-      'stroke="#BAE6FD" stroke-width="8" opacity="0.6"></path>' +
-      '<text x="16" y="132" font-size="10" fill="#64748B">Musi River</text>' +
-      '<path class="corridor-ring-road" d="M 60 60 H 620 Q 660 60 660 100 V 340 Q 660 380 620 380 H 60 Q 20 380 20 340 V 100 Q 20 60 60 60 Z" ' +
-      'fill="none" stroke="#E2E8F0" stroke-width="6"></path>' +
-      '<text x="28" y="50" font-size="10" fill="#64748B">Outer Ring Road</text>';
-
-    routes.forEach(function (r) {
-      s += '<line class="route-line" x1="' + r.from.x + '" y1="' + r.from.y + '" x2="' + r.to.x + '" y2="' + r.to.y +
-        '" stroke="#059669" stroke-width="2" stroke-dasharray="6 5"></line>';
-    });
-
-    names.forEach(function (name) {
-      var p = CORRIDOR_POS[name];
-      var w = Math.round(name.length * 6.4 + 16);
-      s += '<circle class="locality-dot" cx="' + p.x + '" cy="' + p.y + '" r="3.5" fill="#94A3B8"></circle>' +
-        '<rect class="locality-pill-bg" x="' + (p.x - w / 2) + '" y="' + (p.y + 15) + '" width="' + w +
-        '" height="18" rx="6" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1"></rect>' +
-        '<text class="locality-label" x="' + p.x + '" y="' + (p.y + 28) +
-        '" text-anchor="middle" font-size="11" fill="#334155" stroke="#FFFFFF" stroke-width="3" paint-order="stroke">' +
-        esc(name) + "</text>";
-    });
-
-    Object.keys(ngoPin).forEach(function (id) {
-      var np = ngoPin[id];
-      s += '<rect class="corridor-ngo" x="' + (np.x - 6) + '" y="' + (np.y - 6) +
-        '" width="12" height="12" rx="3" fill="#059669"><title>' + esc(np.ngo.name) + "</title></rect>" +
-        corridorTag(np.x + 10, np.y, ngoShortName(np.ngo), "corridor-ngo-tag");
-    });
-
-    Object.keys(catPin).forEach(function (id) {
-      var c = catPin[id];
-      var color = RING_COLOR[c.cls];
-      if (c.mins < 60) {
-        s += '<circle class="corridor-urgent" cx="' + c.x + '" cy="' + c.y +
-          '" r="12" fill="none" stroke="#DC2626" stroke-width="1.5"></circle>';
-      }
-      s += '<circle class="corridor-caterer" cx="' + c.x + '" cy="' + c.y + '" r="8" fill="#FFFFFF" stroke="' +
-        color + '" stroke-width="3"><title>' +
-        esc(c.b.id + " \u00B7 " + c.b.caterer + " \u00B7 " + Math.max(0, Math.round(c.mins)) + " min safe") +
-        "</title></circle>" +
-        corridorTag(c.x + 16, c.y, c.b.id + " \u2022 " + fmtNum(c.b.kg) + "kg", "corridor-caterer-tag");
-    });
-
-    routes.forEach(function (r) {
-      if (r.b.status !== "Collected") return;
-      s += '<g class="corridor-rider"><animateMotion dur="6s" repeatCount="indefinite"><mpath href="#corridor-route-' +
-        r.idx + '"></mpath></animateMotion>' +
-        '<circle r="5" fill="#2563EB"></circle>' +
-        '<rect x="-22" y="-27" width="44" height="16" rx="8" fill="#FFFFFF" stroke="#2563EB" stroke-width="1"></rect>' +
-        '<text x="0" y="-15" text-anchor="middle" font-size="10" fill="#1E3A8A">' +
-        esc(riderShortId(r.b.rider)) + "</text></g>";
-    });
-
-    var legend = '<div class="radar-legend">' +
-      '<span class="radar-legend-item"><span class="radar-legend-swatch" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#16a34a"></span>Caterer pickup (ring = safe window)</span>' +
-      '<span class="radar-legend-item"><span class="radar-legend-swatch" style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#059669"></span>Partner NGO shelter</span>' +
-      '<span class="radar-legend-item"><span class="radar-legend-swatch" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#2563EB"></span>Live EV rider route</span>' +
-      '<span class="radar-legend-item"><span class="radar-legend-swatch" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#DC2626"></span>Urgent (&lt;60m)</span>' +
-      "</div>";
-
-    el.innerHTML = legend +
-      '<svg class="corridor-svg" viewBox="0 0 680 420" role="img" aria-label="Hyderabad IT corridor dispatch map">' +
-      defs + s + "</svg>";
+      radarLandmarksHtml() + routeHtml + pinHtml + riderHtml + "</svg>";
+    el.innerHTML = legend + svg;
+    renderRadarPopover();
+    startRadarAnimation();
   }
+
 
   // Route cards for active, assigned batches: batch id, status, route, EV rider, safe window and ETA (25 km/h rule).
   function renderCorridorEta() {
@@ -2672,13 +2894,14 @@
       var mins = Math.max(0, Math.round(safeMinsLeft(b, now)));
       var left = Math.floor(mins / 60) + "h " + (mins % 60) + "m left";
       var rider = b.rider ? b.rider : "Not yet assigned";
+      var rr = radarReadout(b, now);
       cards.push('<article class="route-card">' +
         '<header class="route-card-head"><strong>' + esc(b.id) + '</strong> <span class="eta-badge">' +
         esc(b.status) + "</span></header>" +
         '<p class="route-card-path">' + esc(b.caterer) + " \u2192 " + esc(ngo.name) + "</p>" +
         '<p class="route-card-rider"><span class="route-card-label">EV rider</span> ' + esc(rider) + "</p>" +
         '<p class="route-card-meta"><span>' + esc(left) + "</span> <span>ETA " + esc(etaMinFor(ngo)) +
-        " min</span></p>" +
+        " min</span>" + (rr ? " <span>" + esc(rr.km.toFixed(1)) + " km left</span>" : "") + "</p>" +
         "</article>");
     });
     box.innerHTML = cards.length ? cards.join("") : '<p class="empty-state">No active corridor routes yet.</p>';
@@ -3232,6 +3455,8 @@
   // Delegated listeners for the v6 modules: attached once here, never inside a render.
   document.addEventListener("click", onModuleClick);
   document.addEventListener("change", onModuleChange);
+  // Radar pin and popover listeners: attached once here.
+  bindRadarListeners();
   var estimatorHost = $("safety-estimator");
   if (estimatorHost) {
     estimatorHost.addEventListener("input", updateEstimator);
