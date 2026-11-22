@@ -10,32 +10,54 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header class="site-header">
-    <div class="brand">
-      <span class="logo" aria-hidden="true">AS</span>
-      <div>
-        <h1>AnnaSetu</h1>
-        <p class="tagline">Hyperlocal surplus food rescue for event &amp; wedding caterers, Hyderabad</p>
-      </div>
-    </div>
-    <span id="city-status-pill" class="status-pill"><span class="status-dot" aria-hidden="true"></span>Hyderabad Corridor • Live Dispatch</span>
-  </header>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <nav class="side-nav tabs" role="tablist" aria-label="Main">
+        <button class="tab nav-item active" role="tab" aria-selected="true" aria-controls="view-caterer" data-action="tab" data-view="caterer"><span class="nav-icon" aria-hidden="true">🍱</span>Caterer Portal</button>
+        <button class="tab nav-item" role="tab" aria-selected="false" aria-controls="view-feed" data-action="tab" data-view="feed"><span class="nav-icon" aria-hidden="true">🛵</span>Live Dispatch</button>
+        <button class="tab nav-item" role="tab" aria-selected="false" aria-controls="view-impact" data-action="tab" data-view="impact"><span class="nav-icon" aria-hidden="true">🌱</span>Impact &amp; ESG</button>
+        <button class="tab nav-item" role="tab" aria-selected="false" aria-controls="view-roi" data-action="tab" data-view="roi"><span class="nav-icon" aria-hidden="true">📈</span>Business &amp; ROI</button>
+      </nav>
+      <p class="sidebar-note">Synthetic demo. Placeholder names and figures only.</p>
+    </aside>
 
-  <nav class="tabs" role="tablist" aria-label="Main views">
-    <button class="tab active" role="tab" aria-selected="true" aria-controls="view-caterer" data-action="tab" data-view="caterer">Caterer Portal (Donate)</button>
-    <button class="tab" role="tab" aria-selected="false" aria-controls="view-feed" data-action="tab" data-view="feed">NGO &amp; Rider Dispatch (Live Feed)</button>
-    <button class="tab" role="tab" aria-selected="false" aria-controls="view-impact" data-action="tab" data-view="impact">Impact &amp; ESG Ledger</button>
-    <button class="tab" role="tab" aria-selected="false" aria-controls="view-roi" data-action="tab" data-view="roi">Business Model &amp; ROI</button>
-  </nav>
+    <div class="main-col">
+      <header class="app-header">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">AS</span>
+          <div>
+            <h1>AnnaSetu</h1>
+            <p class="tagline">Hyperlocal surplus food rescue for event &amp; wedding caterers, Hyderabad</p>
+          </div>
+        </div>
+        <div class="header-search">
+          <select id="header-locality-select" aria-label="Locality">
+            <option value="">All localities</option>
+          </select>
+          <input id="header-search-input" type="search" placeholder="Search batch, caterer or NGO">
+        </div>
+        <span id="city-status-pill" class="status-pill"><span class="status-dot" aria-hidden="true"></span>Hyderabad Corridor • Active</span>
+      </header>
 
-  <section id="pulse-strip" class="pulse-strip" aria-label="Live city pulse">
-    <div class="pulse-tile"><span class="pulse-label">Active Batches</span><strong id="pulse-active-batches" class="pulse-value">—</strong></div>
-    <div class="pulse-tile"><span class="pulse-label">Meals Rescued Today</span><strong id="pulse-meals-today" class="pulse-value">—</strong></div>
-    <div class="pulse-tile"><span class="pulse-label">Avg Pickup Speed (mins)</span><strong id="pulse-avg-pickup" class="pulse-value">—</strong></div>
-    <div class="pulse-tile"><span class="pulse-label">CO2e Saved (kg)</span><strong id="pulse-co2e" class="pulse-value">—</strong></div>
-  </section>
+      <section id="hero-banner" class="hero-banner">
+        <p class="hero-kicker">Hyderabad Corridor</p>
+        <h2 class="hero-title">Bridge Surplus Food to Nearby Shelters in Minutes</h2>
+        <div class="hero-stats">
+          <div class="glass-stat"><span class="glass-label">Meals Rescued</span><strong id="hero-stat-meals">—</strong></div>
+          <div class="glass-stat"><span class="glass-label">Active Pickups</span><strong id="hero-stat-active">—</strong></div>
+          <div class="glass-stat"><span class="glass-label">CO2e Saved</span><strong id="hero-stat-co2e">—</strong></div>
+        </div>
+        <button id="hero-cta" class="btn-pill-white" type="button">Post or Claim a Batch</button>
+      </section>
 
-  <main>
+      <section id="pulse-strip" class="pulse-strip" aria-label="Live city pulse">
+        <div class="pulse-tile"><span class="pulse-label">Active Batches</span><strong id="pulse-active-batches" class="pulse-value">—</strong></div>
+        <div class="pulse-tile"><span class="pulse-label">Meals Rescued Today</span><strong id="pulse-meals-today" class="pulse-value">—</strong></div>
+        <div class="pulse-tile"><span class="pulse-label">Avg Pickup Speed (mins)</span><strong id="pulse-avg-pickup" class="pulse-value">—</strong></div>
+        <div class="pulse-tile"><span class="pulse-label">CO2e Saved (kg)</span><strong id="pulse-co2e" class="pulse-value">—</strong></div>
+      </section>
+
+      <main>
     <!-- 1. Caterer Portal (Donate) -->
     <section id="view-caterer" class="view active" role="tabpanel">
       <div class="grid-2">
@@ -221,9 +243,9 @@
         <label for="esg-caterer-select">Caterer</label>
         <select id="esg-caterer-select"></select>
         <div id="esg-report-preview"></div>
-        <button type="button" id="esg-generate-btn">Generate Monthly ESG Summary</button>
-        <button type="button" id="esg-print-btn" class="hidden">Print / Save as PDF</button>
-        <button type="button" id="btn-download-csv" class="btn-secondary">Download CSV Audit Log</button>
+        <button type="button" id="esg-generate-btn" class="btn btn-primary">Generate Monthly ESG Summary</button>
+        <button type="button" id="esg-print-btn" class="btn btn-secondary hidden">Print / Save as PDF</button>
+        <button type="button" id="btn-download-csv" class="btn btn-secondary">Download CSV Audit Log</button>
         <p class="esg-note">This is an operational sustainability report, not a tax-exemption certificate. AnnaSetu does not guarantee tax deductions or legal exemptions.</p>
       </section>
 
@@ -322,12 +344,19 @@
       </section>
 
     </section>
-  </main>
+    </main>
+    </div>
 
-  <footer class="site-footer">
-    <p id="legal-text" class="legal">Synthetic demo only. Caterers, NGOs, riders, localities, and coordinates are fictional placeholders. Phone numbers are placeholders such as +91-XXXXX-00000. AnnaSetu coordinates pickups only and does not certify food safety or guarantee tax/legal benefits. Disclaimer: AnnaSetu is a logistics coordination platform only. We do not inspect, test, or certify food safety, nor do we guarantee tax deductions or legal exemptions. Receivers must verify food condition upon pickup.</p>
+    <aside id="live-queue-rail" class="queue-rail">
+      <h2 class="rail-title">Live Dispatch Queue</h2>
+      <div id="queue-rail-list" class="queue-rail-list"></div>
+    </aside>
+  </div>
+
+  <footer class="app-footer">
+    <p id="legal-text" class="legal">Synthetic demo only. Caterers, NGOs, riders, localities, and coordinates are fictional placeholders. Phone numbers are placeholders such as +91-XXXXX-00000. AnnaSetu coordinates pickups only and does not certify food safety or guarantee tax/legal benefits.</p>
     <div class="reset-row">
-      <button type="button" id="reset-demo-btn" class="btn-secondary">Reset Demo Data</button>
+      <button type="button" id="reset-demo-btn" class="btn-secondary btn-reset">Reset Demo Data</button>
     </div>
     <p id="reset-msg" role="status"></p>
   </footer>
@@ -336,7 +365,7 @@
     <div class="modal-card">
       <h2 id="handling-title">Receiver Handling &amp; Safety Checklist</h2>
       <div id="handling-body"></div>
-      <button type="button" class="modal-close">Close</button>
+      <button type="button" class="btn btn-secondary modal-close">Close</button>
     </div>
   </div>
 

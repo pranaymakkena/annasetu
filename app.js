@@ -312,7 +312,7 @@
       }).join("");
       return '<button type="button" class="btn btn-primary" data-action="claim" data-id="' + esc(b.id) +
         '">Claim Batch (Smart Match)</button>' +
-        '<label class="ngo-override">Manual NGO Override<select data-override-select="' + esc(b.id) + '">' +
+        '<label class="ngo-override">Manual NGO Override<select class="override-select" data-override-select="' + esc(b.id) + '">' +
         options + "</select></label>" +
         '<button type="button" class="btn btn-secondary" data-action="override-assign" data-id="' + esc(b.id) +
         '">Confirm Override</button>';
@@ -640,28 +640,28 @@
     return '<span class="badge badge-' + esc(status.toLowerCase()) + '">' + esc(status) + "</span>";
   }
 
-  // Countdown as HHh MMm SSs, zero-padded. Returns "Expired" once the deadline has passed.
+  // Countdown as HH:MM:SS, zero-padded. Returns "Expired" once the deadline has passed.
   function formatCountdown(ms) {
     if (ms <= 0) return "Expired";
     var secs = Math.floor(ms / 1000);
     var hours = Math.floor(secs / 3600);
     var mins = Math.floor((secs % 3600) / 60);
-    return pad(hours) + "h " + pad(mins) + "m " + pad(secs % 60) + "s";
+    return pad(hours) + ":" + pad(mins) + ":" + pad(secs % 60);
   }
 
-  // Live countdown element; the ticker keeps its text and classes current.
-  // Expired listings show the lock text instead of a countdown.
+  // Live countdown: <span class="countdown"> with data-expires, so the ticker keeps text and the
+  // "urgent" class (under URGENT_MIN minutes) current. Expired and Delivered show a fixed label.
   function urgencyHtml(b, now) {
-    if (b.status === "Expired") return '<span class="urgency expired">Expired \u2014 Do Not Distribute</span>';
-    if (b.status === "Delivered") return '<span class="urgency ok">Completed</span>';
+    if (b.status === "Expired") return '<span class="countdown">Expired</span>';
+    if (b.status === "Delivered") return '<span class="countdown">Completed</span>';
     var left = b.expiresAt - now;
-    var cls = (isLive(b) ? " live" : "") + (left < URGENT_MIN * MIN ? " urgent" : "");
-    return '<span class="urgency' + (cls || " ok") + '" data-expires="' + esc(b.expiresAt) +
-      '" data-status="' + esc(b.status) + '"><span class="countdown">' + esc(formatCountdown(left)) +
-      "</span></span>";
+    var urgent = left < URGENT_MIN * MIN;
+    return '<span class="countdown' + (urgent ? " urgent" : "") + '" data-expires="' + esc(b.expiresAt) + '">' +
+      esc(formatCountdown(left)) + "</span>";
   }
 
   // Updates only the text/classes of [data-expires] elements, once per second.
+  // The queue-rail item that holds a countdown gets the same "urgent" state.
   // If a listing crosses its deadline, the lock is applied and the views re-render.
   function tickCountdowns() {
     var now = Date.now();
@@ -671,11 +671,11 @@
     }
     Array.prototype.forEach.call(document.querySelectorAll("[data-expires]"), function (el) {
       var left = Number(el.getAttribute("data-expires")) - now;
-      var live = el.getAttribute("data-status") === "Claimed" || el.getAttribute("data-status") === "Collected";
-      el.classList.toggle("live", live);
-      el.classList.toggle("urgent", left < URGENT_MIN * MIN);
-      var target = el.querySelector(".countdown") || el;
-      target.textContent = formatCountdown(left);
+      var urgent = left < URGENT_MIN * MIN;
+      el.classList.toggle("urgent", urgent);
+      var row = el.closest ? el.closest(".queue-item") : null;
+      if (row) row.classList.toggle("urgent", urgent);
+      el.textContent = formatCountdown(left);
     });
   }
 
@@ -705,16 +705,23 @@
     return "";
   }
 
+  // Stage index for the progress bar: Posted=0, Claimed/Assigned=1, Collected/Picked Up/In Transit=2,
+  // Delivered=3. Expired (and any unmapped status) gives -1, so no step is done or current.
+  var STAGE_INDEX = { Posted: 0, Assigned: 1, Claimed: 1, "Picked Up": 2, Collected: 2, "In Transit": 2, Delivered: 3 };
+  function stageIndexOf(b) {
+    return Object.prototype.hasOwnProperty.call(STAGE_INDEX, b.status) ? STAGE_INDEX[b.status] : -1;
+  }
+
+  // Four progress bars with the stage label under each, then the stage-detail line.
   function trackerHtml(b) {
-    var idx = STAGES.indexOf(b.status); // -1 for Expired: every step shows as pending
+    var idx = stageIndexOf(b);
     var steps = STAGES.map(function (name, i) {
-      var cls = idx === -1 ? "pending" : (i < idx ? "done" : (i === idx ? "current" : "pending"));
-      var mark = cls === "done" ? "\u2713 " : "";
-      return '<li class="step ' + cls + '">' + mark + esc(name) + "</li>";
+      var cls = idx === -1 ? "" : (i < idx ? " done" : (i === idx ? " current" : ""));
+      return '<div class="progress-step' + cls + '"><span>' + esc(name) + "</span></div>";
     }).join("");
     var detail = stageDetailHtml(b, idx);
-    return '<div class="tracker-wrap"><ol class="tracker" aria-label="Pickup stages">' + steps + "</ol>" +
-      (detail ? '<p class="step-detail">' + detail + "</p>" : "") + "</div>";
+    return '<div class="progress-steps" aria-label="Pickup stages">' + steps + "</div>" +
+      (detail ? '<p class="step-detail">' + detail + "</p>" : "");
   }
 
   // Radar scale: the 10 km ring sits at RADAR_MAX_PX from the centre (fits the 200 viewBox).
@@ -783,27 +790,38 @@
     return out + "</svg>";
   }
 
-  // Listing card. actionHtml is trusted markup built by this file (ids are escaped).
+  // Listing card: .batch-card with a pastel tint; .card-header (category, id pill, countdown);
+  // .card-body (dish, caterer, locality, kg, phone, progress, detail, radar, disclaimer); .card-actions footer.
+  // actionHtml is trusted markup built by this file (ids are escaped).
   function cardHtml(b, now, actionHtml) {
-    var cls = b.status === "Expired" ? "expired" : (isLive(b) ? "live" : (isUrgent(b, now) ? "urgent" : ""));
     var ngo = b.ngoId ? ngoById(b.ngoId) : null;
-    var html = '<article class="card ' + cls + '">';
+    var isVeg = b.diet === "Veg";
+    // Pastel tint by category; Expired batches get the blush tint.
+    var tint = b.status === "Expired" ? "tint-blush" : (isVeg ? "tint-mint" : "tint-cream");
+    var icon = isVeg ? "\uD83E\uDD57" : "\uD83C\uDF57"; // salad / poultry emoji
+    var html = '<article class="batch-card ' + tint + '">';
+    html += '<div class="card-header">' +
+      '<span class="category-badge ' + (isVeg ? "veg" : "nonveg") + '" aria-label="' +
+      (isVeg ? "Veg" : "Non-Veg") + '">' + icon + "</span>" +
+      '<div class="card-header-right"><span class="batch-id-pill">' + esc(b.id) + "</span>" +
+      urgencyHtml(b, now) + "</div>" +
+      "</div>";
     html += '<div class="card-body">';
-    html += '<div class="card-top"><h3>' + esc(b.food) + "</h3>" + badgeHtml(b.status) + "</div>";
-    html += '<p class="meta"><strong>' + esc(b.id) + "</strong> · " + esc(b.caterer) + " · " + esc(b.locality) +
-      phoneSpan(b.catererPhone) + "</p>";
-    html += '<p class="meta">' + esc(b.diet) + " · " + esc(b.servings) + " servings · " + fmtNum(b.kg) + " kg</p>";
+    html += "<h3>" + esc(b.food) + "</h3>";
+    html += badgeHtml(b.status);
+    html += '<p class="meta">Caterer: ' + esc(b.caterer) + phoneSpan(b.catererPhone) + "</p>";
+    html += '<p class="meta">' + esc(b.locality) + " · " + esc(b.diet) + " · " + esc(b.servings) +
+      " servings · " + fmtNum(b.kg) + " kg</p>";
     html += '<p class="meta">Prepared ' + fmtTime(b.preparedAt) + " · Expires " + fmtTime(b.expiresAt) + "</p>";
     if (ngo) {
       html += '<p class="meta">NGO: ' + esc(ngo.name) + phoneSpan(ngo.phone) + "</p>";
     }
-    html += urgencyHtml(b, now);
     if (b.dispatchNote) html += '<p class="warn">' + esc(b.dispatchNote) + "</p>";
     html += trackerHtml(b);
     html += '<div class="radar-wrap">' + renderRadar(b) + "</div>";
     html += '<p class="disclaimer">' + esc(D.DISCLAIMER) + "</p>";
     html += "</div>";
-    html += '<div class="card-footer">' + cardFooterHtml(b, actionHtml) + "</div>";
+    html += '<div class="card-actions">' + cardFooterHtml(b, actionHtml) + "</div>";
     html += "</article>";
     return html;
   }
@@ -858,6 +876,7 @@
         return cardHtml(b, now, "");
       }).join("");
     }
+    renderQueueRail();
     startTicker();
   }
 
@@ -926,8 +945,34 @@
     $("feed-active").innerHTML = active.length ? active.map(function (b) {
       return cardHtml(b, now, feedActionsHtml(b));
     }).join("") : '<p class="empty">No active rescues yet.</p>';
+    renderQueueRail();
     startTicker();
   }
+
+  // Right-hand live queue rail: one item per active batch (not Delivered/Expired), soonest deadline first.
+  // Items under URGENT_MIN minutes get "urgent"; the ticker keeps the countdowns current.
+  function renderQueueRail() {
+    var list = $("queue-rail-list");
+    if (!list) return;
+    var now = Date.now();
+    var active = state.batches.filter(function (b) {
+      return b.status !== "Delivered" && b.status !== "Expired";
+    }).sort(function (a, b) { return (a.expiresAt - now) - (b.expiresAt - now); });
+    if (!active.length) {
+      list.innerHTML = '<p class="empty">No active batches</p>';
+      return;
+    }
+    list.innerHTML = active.map(function (b) {
+      var urgent = b.expiresAt - now < URGENT_MIN * MIN;
+      return '<div class="queue-item' + (urgent ? " urgent" : "") + '">' +
+        '<div class="queue-item-top"><span class="batch-id-pill">' + esc(b.id) + "</span>" +
+        urgencyHtml(b, now) + "</div>" +
+        '<p class="queue-item-dish">' + esc(b.food) + "</p>" +
+        '<p class="queue-item-status">' + esc(b.status) + "</p>" +
+        "</div>";
+    }).join("");
+  }
+
 
 
   // ---------- pure ledger / ESG logic (no DOM) ----------
@@ -1479,6 +1524,20 @@
     setTextIfPresent("pulse-co2e", fmtNum(totals.co2Kg));
   }
 
+  // Hero banner stats. Meals and CO2e come from Delivered batches (computeLedgerTotals, the same basis
+  // as the pulse strip); active = not Delivered and not Expired. Thousands use Indian grouping.
+  function renderHeroStats() {
+    var totals = computeLedgerTotals(state.batches);
+    var active = 0;
+    state.batches.forEach(function (b) {
+      if (b.status !== "Delivered" && b.status !== "Expired") active += 1;
+    });
+    setTextIfPresent("hero-stat-meals", Number(totals.meals).toLocaleString("en-IN"));
+    setTextIfPresent("hero-stat-active", Number(active).toLocaleString("en-IN"));
+    setTextIfPresent("hero-stat-co2e", fmtNum(totals.co2Kg));
+  }
+
+
   // Header status pill: sets the label text only, keeping the existing dot element.
   function setCityStatusPill() {
     var pill = $("city-status-pill");
@@ -1498,19 +1557,22 @@
     renderFeed();
     renderImpact();
     renderPulse();
+    renderHeroStats();
     renderBusinessModel();
   }
 
   function setView(view) {
     if (!renderers[view]) return;
-    var tabs = document.querySelectorAll(".tab");
+    // Sidebar .nav-item buttons (and any legacy .tab): active class + aria-selected in one pass.
+    var tabs = document.querySelectorAll(".nav-item, .tab");
     Array.prototype.forEach.call(tabs, function (t) {
       var on = t.getAttribute("data-view") === view;
       t.classList.toggle("active", on);
       t.setAttribute("aria-selected", on ? "true" : "false");
     });
     ["caterer", "feed", "impact", "roi"].forEach(function (v) {
-      $("view-" + v).classList.toggle("active", v === view);
+      var panel = $("view-" + v);
+      if (panel) panel.classList.toggle("active", v === view);
     });
     renderers[view]();
   }
@@ -1603,6 +1665,19 @@
     });
   }
 
+  // Hero CTA: switch to the Caterer Portal panel and bring it into view.
+  var heroCta = $("hero-cta");
+  if (heroCta) {
+    heroCta.addEventListener("click", function () {
+      setView("caterer");
+      var panel = $("view-caterer");
+      if (panel && typeof panel.scrollIntoView === "function") {
+        panel.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    });
+  }
+
+
 
   // ---------- init ----------
   var legal = $("legal-text");
@@ -1622,5 +1697,6 @@
     renderFeed();
     renderImpact();
     renderPulse();
+    renderHeroStats();
   }, 30 * 1000);
 })();
