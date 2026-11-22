@@ -741,58 +741,99 @@
     return Math.min(RADAR_MAX_PX, px);
   }
 
-  // Compact SVG radar: donor at the centre, distance rings (2/5/10 km), NGO pins at
-  // deterministic angles with short labels, a route line to the assigned NGO and a rider dot.
+  // Dispatch radar (viewBox 380x280): Caterer Hub at the centre, three dashed distance rings,
+  // four NGO pins at fixed slots with label pills, and a route + rider badge for active batches.
   function renderRadar(b) {
-    var CX = 160, CY = 125;
-    var ANGLES = [-135, -60, 15, 165]; // degrees; one NGO pin per slot, first four NGOs only
-    var RING_LABELS = ["2 km", "5 km", "10 km"];
-    var ngo = b.ngoId ? ngoById(b.ngoId) : null;
-    var points = state.ngos.slice(0, ANGLES.length).map(function (n, i) {
-      var a = ANGLES[i] * Math.PI / 180;
-      var R = Math.min((Number(n.distance_km) || 0) * 10, 96);
-      return { n: n, a: a, x: CX + R * Math.cos(a), y: CY + R * Math.sin(a) };
-    });
-    var out = '<svg class="radar" viewBox="0 0 320 260" width="100%" role="img" aria-label="Dispatch radar">';
+    var HUB_X = 190, HUB_Y = 135;
+    var CANVAS_W = 380, EDGE = 6, CHAR_W = 6.2, PILL_PAD = 12;
+    var SLOTS = [
+      { id: "ngo-annapurna", short: "Annapurna", km: 2.1, px: 248, py: 88, lx: 258, ly: 84, anchor: "start" },
+      { id: "ngo-asha", short: "Asha", km: 3.2, px: 122, py: 78, lx: 112, ly: 74, anchor: "end" },
+      { id: "ngo-hope", short: "Hope St", km: 6.8, px: 266, py: 188, lx: 276, ly: 192, anchor: "start" },
+      { id: "ngo-sahayam", short: "Sahayam", km: 9.4, px: 96, py: 196, lx: 86, ly: 200, anchor: "end" }
+    ];
+    var ngos = state.ngos || [];
 
-    [20, 50, 100].forEach(function (r, i) {
-      out += '<circle class="radar-ring" cx="160" cy="125" r="' + r + '" fill="none"></circle>';
-      // Ring labels sit on the 45-degree diagonal, just outside each ring.
-      var lx = CX + r * 0.707;
-      var ly = CY + r * 0.707;
-      out += '<text class="radar-ring-label" x="' + lx.toFixed(1) + '" y="' + ly.toFixed(1) +
-        '" text-anchor="start">' + RING_LABELS[i] + "</text>";
+    // Match each slot to an NGO by id; if the id is missing, fall back to data.js order.
+    var pins = [];
+    SLOTS.forEach(function (slot, i) {
+      var n = null;
+      ngos.forEach(function (x) { if (!n && x.id === slot.id) n = x; });
+      if (!n && ngos[i]) n = ngos[i];
+      if (!n) return;
+      var dk = Number(n.distance_km);
+      var km = (n.distance_km !== null && isFinite(dk) && dk !== slot.km) ? dk : slot.km;
+      pins.push({
+        n: n, px: slot.px, py: slot.py, lx: slot.lx, ly: slot.ly, anchor: slot.anchor,
+        label: slot.short + " \u2022 " + km.toFixed(1) + " km"
+      });
     });
 
-    // Route line from the kitchen to the assigned NGO's pin; drawn before the pins so pins sit on top.
-    var routeIdx = -1;
-    points.forEach(function (p, i) {
-      if (ngo && p.n.id === ngo.id) routeIdx = i;
-    });
-    if (routeIdx >= 0) {
-      out += '<line class="radar-route" x1="160" y1="125" x2="' + points[routeIdx].x.toFixed(1) +
-        '" y2="' + points[routeIdx].y.toFixed(1) + '"></line>';
+    // Route and rider only for Claimed / Collected / Delivered batches with an assigned NGO on the radar.
+    var progress = b.status === "Claimed" ? 0.30 : b.status === "Collected" ? 0.68 : b.status === "Delivered" ? 1 : null;
+    var assigned = null;
+    if (progress !== null && b.ngoId) {
+      pins.forEach(function (p) { if (!assigned && p.n.id === b.ngoId) assigned = p; });
     }
 
-    points.forEach(function (p) {
-      var name = String(p.n.name || "");
-      var short = name.length > 14 ? name.slice(0, 13) + "\u2026" : name;
-      var sa = Math.sin(p.a);
-      var ca = Math.cos(p.a);
-      var dy = sa < 0 ? -12 : 18;
-      var anchor = Math.abs(ca) < 0.3 ? "middle" : (ca > 0 ? "start" : "end");
-      var lx = Math.min(312, Math.max(8, p.x));
-      var ly = Math.min(252, Math.max(8, p.y));
-      out += '<circle class="radar-pin" cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="5"><title>' +
-        esc(name) + "</title></circle>";
-      out += '<text class="radar-label" x="' + lx.toFixed(1) + '" y="' + ly.toFixed(1) + '" dy="' + dy +
-        '" text-anchor="' + anchor + '">' + esc(short) + "</text>";
+    // Label pills: width from text estimate, kept inside the canvas with a 6px margin.
+    var labels = pins.map(function (p) {
+      var w = p.label.length * CHAR_W + PILL_PAD;
+      var x = p.anchor === "end" ? p.lx + 6 - w : p.lx - 6;
+      x = Math.max(EDGE, Math.min(x, CANVAS_W - EDGE - w));
+      var tx = p.anchor === "end" ? x + w - 6 : x + 6;
+      return { x: x, y: p.ly - 12, w: w, tx: tx, ty: p.ly };
     });
 
-    out += '<circle class="radar-center" cx="160" cy="125" r="5"></circle>';
-    out += '<text class="radar-label" x="168" y="116" text-anchor="start">Kitchen</text>';
+    var out = '<svg class="radar" viewBox="0 0 380 280" role="img" aria-label="Dispatch radar for ' + esc(b.id) + '">';
+
+    [42, 80, 118].forEach(function (r) {
+      out += '<circle class="radar-ring" cx="190" cy="135" r="' + r + '"></circle>';
+    });
+    [["2 km", 175], ["5 km", 213], ["10 km", 251]].forEach(function (rl) {
+      out += '<text class="radar-ring-label" text-anchor="middle" x="190" y="' + rl[1] + '">' + rl[0] + "</text>";
+    });
+
+    // Draw order: route, pins, pill rects, label texts, hub, rider.
+    if (assigned) {
+      out += '<line class="radar-route" x1="190" y1="135" x2="' + assigned.px + '" y2="' + assigned.py + '"></line>';
+    }
+    pins.forEach(function (p) {
+      var on = assigned === p;
+      out += '<circle class="radar-pin' + (on ? " radar-pin-assigned" : "") + '" cx="' + p.px + '" cy="' + p.py + '" r="6"></circle>';
+    });
+    pins.forEach(function (p, i) {
+      var L = labels[i];
+      var on = assigned === p;
+      out += '<rect class="radar-label-pill' + (on ? " radar-label-pill-assigned" : "") + '" x="' + L.x.toFixed(1) +
+        '" y="' + L.y + '" width="' + L.w.toFixed(1) + '" height="16" rx="6"></rect>';
+    });
+    pins.forEach(function (p, i) {
+      var L = labels[i];
+      out += '<text class="radar-label" text-anchor="' + p.anchor + '" x="' + L.tx.toFixed(1) + '" y="' + L.ty + '">' +
+        esc(p.label) + "</text>";
+    });
+
+    var hubW = "CATERER HUB".length * CHAR_W + PILL_PAD;
+    out += '<circle class="radar-hub-pulse" cx="190" cy="135" r="9"></circle>';
+    out += '<circle class="radar-hub" cx="190" cy="135" r="6"></circle>';
+    out += '<rect class="radar-pill-bg" x="' + (HUB_X - hubW / 2).toFixed(1) + '" y="158" width="' + hubW.toFixed(1) +
+      '" height="16" rx="6"></rect>';
+    out += '<text class="radar-hub-label" text-anchor="middle" x="190" y="170">CATERER HUB</text>';
+
+    if (assigned) {
+      var bx = (HUB_X + progress * (assigned.px - HUB_X)).toFixed(1);
+      var by = (HUB_Y + progress * (assigned.py - HUB_Y)).toFixed(1);
+      if (b.status !== "Delivered") {
+        out += '<circle class="radar-rider-halo" cx="' + bx + '" cy="' + by + '" r="11"></circle>';
+      }
+      out += '<circle class="radar-rider" cx="' + bx + '" cy="' + by + '" r="7"></circle>';
+      out += '<text class="radar-rider-text" x="' + bx + '" y="' + (Number(by) + 3).toFixed(1) +
+        '" text-anchor="middle">R</text>';
+    }
     return out + "</svg>";
   }
+
 
 
   // Listing card: .batch-card with a card-header (icon, dish, batch id, status badge), a 2x2 meta-grid,
@@ -1213,6 +1254,12 @@
     return rows;
   }
 
+  // Status pill for a ledger event. Class key is the lowercase event name (evt-posted, evt-delivered, ...).
+  function eventPillHtml(name) {
+    var key = String(name || "").toLowerCase().replace(/[^a-z]/g, "");
+    return '<span class="evt-pill evt-' + esc(key) + '">' + esc(name) + "</span>";
+  }
+
   function renderLedgerEvents() {
     var body = $("ledger-events-body");
     if (!body) return;
@@ -1222,29 +1269,104 @@
         "<td>" + esc(hhmm(r.at)) + "</td>" +
         "<td>" + esc(r.batchId) + "</td>" +
         "<td>" + esc(r.caterer) + "</td>" +
-        "<td>" + esc(r.event) + "</td>" +
+        "<td>" + eventPillHtml(r.event) + "</td>" +
         "<td>" + esc(r.ngo) + "</td>" +
         "<td>" + esc(r.rider) + "</td>" +
         "</tr>";
     }).join("") : '<tr><td colspan="6">No events yet.</td></tr>';
   }
 
-  // Horizontal bars: rescued kg (Delivered batches) split Veg vs Non-Veg.
-  function renderCategoryBars() {
-    var el = $("category-bars");
-    if (!el) return;
+  // ---------- v5 charts (pure HTML/CSS, no libraries) ----------
+  var IMPACT_LOCALITIES = ["Madhapur", "Gachibowli", "Kondapur", "Jubilee Hills"];
+  var CHART_BAR_MAX_PX = 140;
+
+  // Percent of a total, guarded against zero.
+  function chartPct(part, total) {
+    return total > 0 ? Math.round(100 * part / total) : 0;
+  }
+
+  // Kg per diet (Veg / Non-Veg) for batches matching the filter.
+  function dietKgWhere(filter) {
     var kg = { Veg: 0, "Non-Veg": 0 };
     state.batches.forEach(function (b) {
-      if (b.status === "Delivered" && kg.hasOwnProperty(b.diet)) kg[b.diet] += Number(b.kg) || 0;
+      if (filter(b) && Object.prototype.hasOwnProperty.call(kg, b.diet)) kg[b.diet] += Number(b.kg) || 0;
     });
+    return kg;
+  }
+
+  // Left card: per locality, rescued kg (Delivered) stacked under pipeline kg (open statuses).
+  function localityBarsHtml() {
+    var rows = IMPACT_LOCALITIES.map(function (name) {
+      var rescued = 0;
+      var pipeline = 0;
+      state.batches.forEach(function (b) {
+        if (b.locality !== name) return;
+        var kg = Number(b.kg) || 0;
+        if (b.status === "Delivered") rescued += kg;
+        else if (isOpenStatus(b)) pipeline += kg;
+      });
+      return { name: name, rescued: rescued, pipeline: pipeline, total: rescued + pipeline };
+    });
+    var max = Math.max(1, Math.max.apply(null, rows.map(function (r) { return r.total; })));
+    var cols = rows.map(function (r) {
+      var rPx = Math.round(CHART_BAR_MAX_PX * r.rescued / max);
+      var pPx = Math.round(CHART_BAR_MAX_PX * r.pipeline / max);
+      var label = r.total > 0 ? fmtNum(r.total) + " kg" : "0 kg";
+      return '<div class="bar-col">' +
+        '<span class="chart-value">' + esc(label) + "</span>" +
+        '<div class="bar-stack" role="img" aria-label="' + esc(r.name + ": " + fmtNum(r.rescued) +
+        " kg rescued, " + fmtNum(r.pipeline) + " kg pipeline") + '">' +
+        '<span class="bar-seg bar-pipeline" style="height: ' + pPx + 'px"></span>' +
+        '<span class="bar-seg bar-rescued" style="height: ' + rPx + 'px"></span>' +
+        "</div>" +
+        '<span class="bar-label">' + esc(r.name) + "</span>" +
+        "</div>";
+    }).join("");
+    return '<section class="chart-card">' +
+      "<h3>Surplus Rescued by Hyderabad Locality</h3>" +
+      '<div class="bar-chart">' + cols + "</div>" +
+      '<p class="chart-note">Rescued (Delivered) in emerald, active pipeline in orange.</p>' +
+      "</section>";
+  }
+
+  // One Veg / Non-Veg row: kg label, dual-segment track, and percentage per segment.
+  function dietMixRowHtml(label, kg) {
     var total = kg.Veg + kg["Non-Veg"];
-    function row(label, cls, value) {
-      var pct = total > 0 ? Math.round(100 * value / total) : 0;
-      return '<div class="cat-bar-row"><span>' + esc(label) + " \u00B7 " + esc(fmtNum(value)) + " kg</span>" +
-        '<div class="cat-bar-track"><span class="cat-bar-fill ' + cls + '" style="width: ' + pct +
-        '%"></span></div></div>';
-    }
-    el.innerHTML = row("Veg", "veg", kg.Veg) + row("Non-Veg", "nonveg", kg["Non-Veg"]);
+    var vegW = total > 0 ? 100 * kg.Veg / total : 0;
+    var nonW = total > 0 ? 100 * kg["Non-Veg"] / total : 0;
+    var text = total > 0
+      ? fmtNum(kg["Non-Veg"]) + " kg Non-Veg \u2022 " + fmtNum(kg.Veg) + " kg Veg"
+      : "0 kg";
+    var pctText = total > 0
+      ? "Veg " + chartPct(kg.Veg, total) + "% \u00B7 Non-Veg " + chartPct(kg["Non-Veg"], total) + "%"
+      : "No rescues yet";
+    return '<div class="mix-row">' +
+      '<div class="mix-head"><span class="mix-label">' + esc(label) + "</span>" +
+      '<span class="chart-value">' + esc(text) + "</span></div>" +
+      '<div class="mix-track">' +
+      '<span class="mix-veg" style="width: ' + vegW.toFixed(2) + '%"></span>' +
+      '<span class="mix-nonveg" style="width: ' + nonW.toFixed(2) + '%"></span>' +
+      "</div>" +
+      '<div class="mix-pct">' + esc(pctText) + "</div>" +
+      "</div>";
+  }
+
+  // Right card: Veg vs Non-Veg split for Delivered and for the open pipeline. Returns HTML only.
+  function renderCategoryBars() {
+    var delivered = dietKgWhere(function (b) { return b.status === "Delivered"; });
+    var pipeline = dietKgWhere(function (b) { return isOpenStatus(b); });
+    return '<section class="chart-card">' +
+      "<h3>Veg vs. Non-Veg Rescue Mix</h3>" +
+      dietMixRowHtml("Delivered", delivered) +
+      dietMixRowHtml("Active Pipeline", pipeline) +
+      "</section>";
+  }
+
+  // Writes the two-column analytics row into #category-bars (above the ledger table).
+  function renderImpactCharts() {
+    var el = $("category-bars");
+    if (!el) return;
+    el.innerHTML = '<div class="chart-row">' + localityBarsHtml() + renderCategoryBars() + "</div>";
   }
 
   // Quotes every field and doubles embedded quotes (RFC 4180 style).
@@ -1273,7 +1395,7 @@
 
   function renderImpact() {
     renderLedgerKpis(computeLedgerTotals(state.batches));
-    renderCategoryBars();
+    renderImpactCharts();
     renderLedgerEvents();
   }
 
@@ -1397,6 +1519,61 @@
       " \u00B7 Total platform revenue = MRR + CSR credits");
 
     renderRoiKpis(r);
+    renderRoiChart(r);
+  }
+
+  // v5 ROI chart block (#roi-chart), created after #kpi-grid if absent. Reads the same calcBusinessModel result as the KPIs.
+  function renderRoiChart(r) {
+    var el = $("roi-chart");
+    if (!el) {
+      var kpi = $("kpi-grid");
+      if (!kpi || !kpi.parentNode) return;
+      el = document.createElement("div");
+      el.id = "roi-chart";
+      el.className = "roi-chart";
+      kpi.parentNode.insertBefore(el, kpi.nextSibling);
+    }
+    var cost = SUBSCRIPTION_INR;
+    var savings = isFinite(r.perCatererSavings) ? r.perCatererSavings : 0;
+    var roiText = isFinite(r.perCatererRoi) ? r.perCatererRoi.toFixed(1) + "x" : "\u2014";
+    var maxA = Math.max(1, cost, savings);
+    function barRow(label, value, cls) {
+      return '<div class="roi-bar-row">' +
+        '<div class="roi-bar-head"><span>' + esc(label) + '</span><span class="chart-value">\u20B9' +
+        esc(bmInt(value)) + "</span></div>" +
+        '<div class="roi-bar-track"><span class="roi-bar-fill ' + cls + '" style="width: ' +
+        (100 * value / maxA).toFixed(2) + '%"></span></div>' +
+        "</div>";
+    }
+
+    var mrr = Number(r.mrr) || 0;
+    var csr = Number(r.tier2Inr) || 0;
+    var mixTotal = mrr + csr;
+    var mrrW = mixTotal > 0 ? 100 * mrr / mixTotal : 0;
+    var csrW = mixTotal > 0 ? 100 * csr / mixTotal : 0;
+
+    el.innerHTML =
+      '<div class="chart-row">' +
+      '<section class="chart-card">' +
+      "<h3>Caterer monthly economics</h3>" +
+      barRow("Caterer SaaS cost", cost, "roi-bar-saas") +
+      barRow("Raw-material waste saved", savings, "roi-bar-waste") +
+      '<p class="chart-note">Savings gap: <strong>' + esc(roiText) + "</strong> (raw-material waste saved \u00F7 SaaS cost)</p>" +
+      "</section>" +
+      '<section class="chart-card">' +
+      "<h3>Platform revenue mix</h3>" +
+      '<div class="roi-mix-track">' +
+      '<span class="roi-seg-mrr" style="width: ' + mrrW.toFixed(2) + '%"></span>' +
+      '<span class="roi-seg-csr" style="width: ' + csrW.toFixed(2) + '%"></span>' +
+      "</div>" +
+      '<div class="roi-mix-legend">' +
+      '<span><i class="roi-dot roi-seg-mrr"></i>SaaS MRR \u20B9' + esc(bmInt(mrr)) +
+      " (" + chartPct(mrr, mixTotal) + "%)</span>" +
+      '<span><i class="roi-dot roi-seg-csr"></i>CSR Delivery Credits \u20B9' + esc(bmInt(csr)) +
+      " (" + chartPct(csr, mixTotal) + "%)</span>" +
+      "</div>" +
+      "</section>" +
+      "</div>";
   }
 
   // Six KPI cards in #kpi-grid. Every value is computed from the sliders via calcBusinessModel.
@@ -1481,7 +1658,9 @@
     if (!el) return;
     var head = "<tr><th>Dimension</th><th>Status Quo (Landfill / Disposal Loss)</th><th>AnnaSetu Pro</th></tr>";
     var body = VALUE_MATRIX_ROWS.map(function (row) {
-      return "<tr><th>" + esc(row[0]) + "</th><td>" + esc(row[1]) + "</td><td>" + esc(row[2]) + "</td></tr>";
+      var keyRow = row[0] === "Community impact" || row[0] === "Price (per caterer)";
+      var trCls = keyRow ? ' class="key-metric"' : "";
+      return "<tr" + trCls + "><th>" + esc(row[0]) + "</th><td>" + esc(row[1]) + "</td><td>" + esc(row[2]) + "</td></tr>";
     }).join("");
     el.innerHTML = '<table class="ledger-table"><thead>' + head + "</thead><tbody>" + body + "</tbody></table>";
   }

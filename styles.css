@@ -900,28 +900,24 @@ td { font-variant-numeric: tabular-nums; }
 #value-matrix tbody tr:nth-child(even) td { background: var(--surface-2); }
 
 /* ---------- Radar, route & category bars ---------- */
-.radar-wrap {
-  display: block;
-  width: 260px;
-  max-width: 100%;
-  margin: 0.5rem auto;
-}
-.radar-wrap svg,
-.radar { width: 100%; height: auto; display: block; }
-.radar-ring {
-  fill: none;
-  stroke: var(--border-strong);
-  stroke-dasharray: 4 4;
-  stroke-opacity: 1;
-}
-.radar-route {
-  fill: none;
-  stroke: var(--brand);
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.radar-label { font-size: 11px; fill: #334155; }
+.radar-wrap { max-width: 380px; margin: 0.75rem auto; }
+.radar { width: 100%; height: auto; overflow: visible; display: block; }
+.radar-ring { fill: none; stroke: #CBD5E1; stroke-dasharray: 4 4; }
+.radar-hub { fill: #059669; }
+.radar-hub-pulse { fill: rgba(5,150,105,.25); transform-box: fill-box; transform-origin: center; animation: radarPulse 2s ease-out infinite; }
+@keyframes radarPulse { from { transform: scale(.6); opacity: .9; } to { transform: scale(2.2); opacity: 0; } }
+.radar-pin { fill: #F97316; stroke: #FFFFFF; stroke-width: 2; }
+.radar-pin-assigned { fill: #059669; }
+.radar-route { fill: none; stroke: #059669; stroke-width: 2.5; stroke-dasharray: 5 4; }
+.radar-label { font-size: 10.5px; font-weight: 600; fill: #0F172A; font-family: Inter, system-ui, sans-serif; }
+.radar-hub-label { font-size: 10px; font-weight: 700; fill: #065F46; letter-spacing: .04em; font-family: Inter, system-ui, sans-serif; }
+.radar-ring-label { font-size: 9px; fill: #64748B; paint-order: stroke; stroke: #FFFFFF; stroke-width: 3px; font-family: Inter, system-ui, sans-serif; }
+.radar-pill-bg, .radar-label-pill { fill: #FFFFFF; stroke: #CBD5E1; stroke-width: 1; }
+.radar-label-pill-assigned { stroke: #059669; }
+.radar-rider { fill: #059669; stroke: #FFFFFF; stroke-width: 1.5; }
+.radar-rider-text { font-size: 8px; font-weight: 700; fill: #FFFFFF; }
+.radar-rider-halo { fill: rgba(5,150,105,.25); transform-box: fill-box; transform-origin: center; animation: radarPulse 1.6s ease-out infinite; }
+@media (prefers-reduced-motion: reduce) { .radar-hub-pulse, .radar-rider-halo { animation: none; } }
 .ngo-pin { fill: var(--brand); }
 .ngo-pin.assigned { fill: var(--emerald); }
 .donor-pin { fill: var(--heading); }
@@ -1270,14 +1266,6 @@ h1, h2, h3, h4 { color: #0F172A; }
 .app-shell { background: #FFFFFF; border-radius: 20px; box-shadow: 0 10px 30px rgba(15,23,42,0.06); overflow: hidden; display: grid; grid-template-columns: 220px minmax(0,1fr) 300px; }
 .queue-rail { border-left: 1px solid #E2E8F0; padding: 20px; position: sticky; top: 0; }
 .main-col { min-width: 0; padding: 24px; }
-.radar-wrap { max-width: 320px; width: 100%; overflow: visible; margin: 0 auto; }
-.radar-wrap svg { width: 100%; height: auto; display: block; overflow: visible; }
-.radar-ring { stroke: #CBD5E1; stroke-dasharray: 4 4; fill: none; }
-.radar-center { fill: #059669; }
-.radar-pin { fill: #F97316; stroke: #FFFFFF; stroke-width: 2; }
-.radar-route { stroke: #059669; stroke-width: 2; stroke-dasharray: 6 4; fill: none; }
-.radar-label { font-size: 11px; fill: #0F172A; font-weight: 600; paint-order: stroke; stroke: #FFFFFF; stroke-width: 3px; stroke-linejoin: round; font-family: Inter, system-ui, sans-serif; }
-.radar-ring-label { font-size: 9px; fill: #64748B; paint-order: stroke; stroke: #FFFFFF; stroke-width: 3px; font-family: Inter, system-ui, sans-serif; }
 .card, .batch-card, .ngo-card { background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; overflow: hidden; padding: 0 0 14px; transition: transform .2s, box-shadow .2s; }
 .card:hover, .batch-card:hover, .ngo-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(15,23,42,0.07); }
 .card-header { padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; gap: 12px; background: #ECFDF5; }
@@ -1401,5 +1389,96 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .header-controls select, .header-controls input { min-width: 0; }
 .empty-state { text-align: center; color: #64748B; font-size: .9rem; padding: 24px 12px; margin: 0; border: 1px dashed #CBD5E1; border-radius: 12px; background: #F8FAFC; }
 /* ===== end v4 ===== */
+
+/* ===== v5 charts & tables ===== */
+/* Charts are plain HTML/CSS (no chart library). Rendered by renderImpactCharts() and renderRoiChart() in app.js. */
+.chart-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 20px; }
+@media (max-width: 760px) {
+  .chart-row { grid-template-columns: minmax(0, 1fr); }
+}
+.chart-card { background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 16px; min-width: 0; }
+.chart-card h3 { font-size: .95rem; margin: 0 0 12px; color: #0F172A; }
+.chart-note { margin: 10px 0 0; font-size: .75rem; color: #64748B; }
+.chart-value { font-variant-numeric: tabular-nums; font-weight: 700; color: #0F172A; font-size: .8rem; }
+
+/* Locality bars: vertical, aligned to the bottom. Pipeline sits on top of rescued. */
+.bar-chart { display: flex; align-items: flex-end; justify-content: space-around; gap: 8px; min-height: 200px; }
+.bar-col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.bar-stack { width: 100%; max-width: 64px; height: 140px; display: flex; flex-direction: column; justify-content: flex-end; background: #F1F5F9; border-radius: 8px 8px 0 0; overflow: hidden; }
+.bar-seg { display: block; width: 100%; transition: height .6s ease, width .6s ease; }
+.bar-rescued { background: linear-gradient(180deg,#34D399,#059669); }
+.bar-pipeline { background: linear-gradient(180deg,#FDBA74,#F97316); }
+.bar-label { font-size: .76rem; color: #334155; text-align: center; overflow-wrap: anywhere; }
+
+/* Veg vs Non-Veg dual-segment mix rows */
+.mix-row + .mix-row { margin-top: 16px; }
+.mix-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.mix-label { font-size: .85rem; font-weight: 600; color: #0F172A; }
+.mix-track { display: flex; height: 12px; border-radius: 999px; overflow: hidden; background: #F1F5F9; }
+.mix-track > span { display: block; height: 100%; transition: width .6s ease; }
+.mix-veg { background: #059669; }
+.mix-nonveg { background: #F97316; }
+.mix-pct { margin-top: 4px; font-size: .75rem; color: #64748B; font-variant-numeric: tabular-nums; }
+
+/* Business tab ROI chart (#roi-chart) */
+.roi-chart { margin: 16px 0 20px; }
+.roi-bar-row + .roi-bar-row { margin-top: 12px; }
+.roi-bar-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: .85rem; color: #0F172A; margin-bottom: 6px; }
+.roi-bar-track { height: 14px; background: #F1F5F9; border-radius: 999px; overflow: hidden; }
+.roi-bar-fill { display: block; height: 100%; border-radius: 999px; transition: width .5s ease; }
+.roi-bar-saas { background: #64748B; }
+.roi-bar-waste { background: #059669; }
+.roi-mix-track { display: flex; height: 14px; background: #F1F5F9; border-radius: 999px; overflow: hidden; }
+.roi-mix-track > span { display: block; height: 100%; transition: width .5s ease; }
+.roi-seg-mrr { background: #059669; }
+.roi-seg-csr { background: #F59E0B; }
+.roi-mix-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; font-size: .8rem; color: #334155; font-variant-numeric: tabular-nums; }
+.roi-mix-legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.roi-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+.roi-dot.roi-seg-mrr { background: #059669; }
+.roi-dot.roi-seg-csr { background: #F59E0B; }
+@media (max-width: 760px) {
+  .roi-chart .chart-row { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Tables: gradient header, zebra rows, hover (ledger events and value matrix) */
+table.ledger-table:has(#ledger-events-body) thead th,
+#value-matrix table thead th {
+  background: linear-gradient(90deg,#065F46 0%,#0F766E 100%);
+  color: #FFFFFF;
+  text-transform: uppercase;
+  font-size: .78rem;
+  letter-spacing: .04em;
+  font-weight: 700;
+}
+table.ledger-table:has(#ledger-events-body) td,
+#value-matrix table td {
+  border-bottom: 1px solid #E2E8F0;
+  padding: 10px 12px;
+}
+table.ledger-table:has(#ledger-events-body) tbody tr:nth-child(odd) td,
+#value-matrix table tbody tr:nth-child(odd) td { background: #FFFFFF; }
+table.ledger-table:has(#ledger-events-body) tbody tr:nth-child(even) td,
+#value-matrix table tbody tr:nth-child(even) td { background: #F8FAFC; }
+
+/* Status pills for ledger event column (lowercase event name as key) */
+.evt-pill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: .72rem; font-weight: 700; }
+.evt-posted { background: #FEF3C7; color: #B45309; }
+.evt-claimed { background: #E0F2FE; color: #0369A1; }
+.evt-collected { background: #EEF2FF; color: #4338CA; }
+.evt-delivered { background: #DCFCE7; color: #15803D; }
+.evt-expired { background: #FEE2E2; color: #B91C1C; }
+
+/* Value matrix: AnnaSetu Pro column highlight (3rd column). Keep the existing @media (min-width:641px) fixed-layout rules above. */
+#value-matrix table { width: 100%; }
+#value-matrix table tbody tr td:nth-child(3) { background: #F0FDF4; }
+#value-matrix table tbody tr.key-metric td:nth-child(3) { font-weight: 700; color: #065F46; }
+#value-matrix table tbody tr:hover td { background: #ECFDF5; }
+table.ledger-table:has(#ledger-events-body) tbody tr:hover td { background: #ECFDF5; }
+@media (max-width: 640px) {
+  #value-matrix { overflow-x: auto; }
+  #value-matrix table { min-width: 560px; }
+}
+/* ===== end v5 ===== */
 
 
