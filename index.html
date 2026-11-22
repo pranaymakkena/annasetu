@@ -11,40 +11,48 @@
 </head>
 <body>
   <div class="app-shell">
+    <header class="app-header">
+      <div class="brand">
+        <img src="AnnaSetuLogo.png" alt="AnnaSetu Logo" class="brand-logo">
+        <div>
+          <h1>AnnaSetu</h1>
+          <p class="tagline">Hyperlocal surplus food rescue for event &amp; wedding caterers, Hyderabad</p>
+        </div>
+      </div>
+      <div class="header-search header-controls">
+        <select id="header-locality-select" aria-label="Locality">
+          <option value="">All localities</option>
+          <option value="Madhapur">Madhapur</option>
+          <option value="Gachibowli">Gachibowli</option>
+          <option value="Kondapur">Kondapur</option>
+          <option value="Jubilee Hills">Jubilee Hills</option>
+          <option value="Hitech City">Hitech City</option>
+          <option value="Banjara Hills">Banjara Hills</option>
+        </select>
+        <input id="header-search-input" type="search" placeholder="Search batch ID, caterer, or dish...">
+      </div>
+      <span id="city-status-pill" class="status-pill"><span class="status-dot" aria-hidden="true"></span>Hyderabad Corridor • Active</span>
+      <div class="role-switcher"><label for="role-select" class="role-label">Logged in as</label><select id="role-select" class="role-select" aria-label="Logged in as"><option value="">Select role</option><option value="ramesh">Ramesh K. (Deccan Royal Caterers)</option><option value="meera">Meera S. (Annapurna Seva NGO)</option><option value="arjun">Arjun V. (EV Rider R-07)</option><option value="vikram">Vikram R. (TechPark CSR Sponsor)</option></select></div>
+    </header>
+
     <aside class="sidebar">
       <nav class="side-nav tabs" role="tablist" aria-label="Main">
-        <button class="tab nav-item active" role="tab" aria-selected="true" aria-controls="view-caterer" data-action="tab" data-view="caterer"><span class="nav-icon"><i data-lucide="utensils" aria-hidden="true"></i></span><span class="nav-label">Caterer Portal</span></button>
-        <button class="tab nav-item" role="tab" aria-selected="false" aria-controls="view-feed" data-action="tab" data-view="feed"><span class="nav-icon"><i data-lucide="truck" aria-hidden="true"></i></span><span class="nav-label">Live Dispatch</span></button>
-        <button class="tab nav-item" role="tab" aria-selected="false" aria-controls="view-impact" data-action="tab" data-view="impact"><span class="nav-icon"><i data-lucide="leaf" aria-hidden="true"></i></span><span class="nav-label">Impact &amp; ESG</span></button>
-        <button class="tab nav-item" role="tab" aria-selected="false" aria-controls="view-roi" data-action="tab" data-view="roi"><span class="nav-icon"><i data-lucide="trending-up" aria-hidden="true"></i></span><span class="nav-label">Business &amp; ROI</span></button>
+        <button class="tab nav-item active" role="tab" aria-selected="true" aria-controls="view-caterer" data-action="tab" data-view="caterer"><span class="nav-icon"><i data-lucide="utensils" aria-hidden="true"></i></span><span class="nav-label">Caterer Portal</span><span class="nav-badge" data-badge="caterer">0</span></button>
+        <button class="tab nav-item" role="tab" aria-selected="false" aria-controls="view-feed" data-action="tab" data-view="feed"><span class="nav-icon"><i data-lucide="truck" aria-hidden="true"></i></span><span class="nav-label">Live Dispatch</span><span class="nav-badge" data-badge="feed">0</span></button>
+        <button class="tab nav-item" role="tab" aria-selected="false" aria-controls="view-radar" data-action="tab" data-view="radar"><span class="nav-icon"><i data-lucide="map" aria-hidden="true"></i></span><span class="nav-label">Corridor Radar</span><span class="nav-badge" data-badge="radar">0</span></button>
+        <button class="tab nav-item" role="tab" aria-selected="false" aria-controls="view-ngos" data-action="tab" data-view="ngos"><span class="nav-icon"><i data-lucide="building-2" aria-hidden="true"></i></span><span class="nav-label">NGO Network</span><span class="nav-badge" data-badge="ngos">0</span></button>
+        <button class="tab nav-item" role="tab" aria-selected="false" aria-controls="view-safety" data-action="tab" data-view="safety"><span class="nav-icon"><i data-lucide="shield-check" aria-hidden="true"></i></span><span class="nav-label">Safety &amp; Handling</span><span class="nav-badge" data-badge="safety">0</span></button>
+        <button class="tab nav-item" role="tab" aria-selected="false" aria-controls="view-impact" data-action="tab" data-view="impact"><span class="nav-icon"><i data-lucide="leaf" aria-hidden="true"></i></span><span class="nav-label">Impact &amp; ESG</span><span class="nav-badge" data-badge="impact">0</span></button>
+        <button class="tab nav-item" role="tab" aria-selected="false" aria-controls="view-roi" data-action="tab" data-view="roi"><span class="nav-icon"><i data-lucide="trending-up" aria-hidden="true"></i></span><span class="nav-label">Business &amp; ROI</span><span class="nav-badge" data-badge="roi">0</span></button>
       </nav>
-      <p class="sidebar-note">Synthetic demo. Placeholder names and figures only.</p>
     </aside>
 
+
+
     <div class="main-col">
-      <header class="app-header">
-        <div class="brand">
-          <img src="AnnaSetuLogo.png" alt="AnnaSetu Logo" class="brand-logo">
-          <div>
-            <h1>AnnaSetu</h1>
-            <p class="tagline">Hyperlocal surplus food rescue for event &amp; wedding caterers, Hyderabad</p>
-          </div>
-        </div>
-        <div class="header-search header-controls">
-          <select id="header-locality-select" aria-label="Locality">
-            <option value="">All localities</option>
-            <option value="Madhapur">Madhapur</option>
-            <option value="Gachibowli">Gachibowli</option>
-            <option value="Kondapur">Kondapur</option>
-            <option value="Jubilee Hills">Jubilee Hills</option>
-            <option value="Hitech City">Hitech City</option>
-            <option value="Banjara Hills">Banjara Hills</option>
-          </select>
-          <input id="header-search-input" type="search" placeholder="Search batch ID, caterer, or dish...">
-        </div>
-        <span id="city-status-pill" class="status-pill"><span class="status-dot" aria-hidden="true"></span>Hyderabad Corridor • Active</span>
-        <div class="role-switcher"><label for="role-select" class="role-label">Logged in as</label><select id="role-select" class="role-select" aria-label="Demo role login"><option value="">Select role</option><option value="ramesh">Ramesh K. (Deccan Royal Caterers)</option><option value="meera">Meera S. (Annapurna Seva NGO)</option><option value="arjun">Arjun V. (EV Rider R-07)</option><option value="vikram">Vikram R. (TechPark CSR Sponsor)</option></select></div>
-      </header>
+      <div id="persona-banner" class="persona-banner" hidden></div>
+
+
 
       <section id="hero-banner" class="hero-banner">
         <p class="hero-kicker">Hyderabad Corridor</p>
@@ -78,7 +86,7 @@
             <button type="button" id="btn-autofill-wedding" class="btn form-autofill-pill">Auto-Fill Sample Surplus</button>
           </div>
           <form id="donate-form" novalidate>
-            <p class="hint">Use the sample caterer names only. Figures are illustrative.</p>
+
             <div id="waste-insight-box" class="insight-box" role="note">
               <h3>Caterer Waste Pattern Alert</h3>
               <p id="waste-insight-text"></p>
@@ -226,8 +234,10 @@
 
     <!-- 2. NGO & Rider Dispatch (Live Feed) -->
     <section id="view-feed" class="view" role="tabpanel">
+      <div id="rider-mission" class="rider-mission" hidden></div>
       <h2>NGO capacity (servings/day)</h2>
       <div id="ngo-panel" class="ngo-grid"></div>
+      <div id="ngo-capacity-bars"></div>
       <p id="feed-msg" class="form-msg" role="status"></p>
       <div id="dispatch-filters" class="filter-pills" role="group" aria-label="Filter batches">
         <button type="button" class="filter-pill active" data-filter="all" aria-pressed="true">All Batches</button>
@@ -246,11 +256,33 @@
           <div id="feed-active" class="card-list"></div>
         </section>
       </div>
+      <div id="split-claim-panel" class="split-claim-panel"></div>
+    </section>
+
+    <!-- 1b. Corridor Radar -->
+    <section id="view-radar" class="view" role="tabpanel">
+      <h2>Corridor Radar</h2>
+      <div id="corridor-map" class="corridor-map"></div>
+      <div id="corridor-eta-list" class="eta-list"></div>
+    </section>
+
+    <!-- 1c. NGO & Kitchen Network -->
+    <section id="view-ngos" class="view" role="tabpanel">
+      <h2>NGO &amp; Kitchen Network</h2>
+      <div id="ngo-network-grid" class="ngo-network-grid"></div>
+    </section>
+
+    <!-- 1d. Safety & Handling -->
+    <section id="view-safety" class="view" role="tabpanel">
+      <h2>Safety &amp; Handling</h2>
+      <div id="safety-monitor" class="safety-monitor"></div>
+      <div id="safety-estimator" class="safety-estimator"></div>
+      <div id="safety-checklist" class="safety-checklist"></div>
     </section>
 
     <!-- 3. Impact & ESG Ledger -->
     <section id="view-impact" class="view" role="tabpanel">
-      <h2>Impact to date (illustrative / synthetic)</h2>
+      <h2>Impact to date</h2>
       <div id="ledger-kpis" class="kpi-grid"></div>
 
       <section class="panel">
@@ -278,8 +310,10 @@
           <li>Value saved = meals &times; &#8377;65</li>
           <li>Average rescue turnaround = mean of (deliveredAt &minus; postedAt) in minutes across Delivered batches.</li>
         </ul>
-        <p class="hint">All figures are illustrative and synthetic.</p>
       </section>
+
+      <div id="esg-kpis" class="esg-kpis"></div>
+      <div id="esg-methodology" class="esg-methodology" hidden></div>
 
       <section id="esg-card" class="esg-card">
         <h2>Caterer ESG Impact Report Preview</h2>
@@ -289,8 +323,9 @@
         <button type="button" id="esg-generate-btn" class="btn btn-primary">Generate Monthly ESG Summary</button>
         <button type="button" id="esg-print-btn" class="btn btn-secondary hidden">Print / Save as PDF</button>
         <button type="button" id="btn-download-csv" class="btn btn-secondary">Download CSV Audit Log</button>
-        <p class="esg-note">This is an operational sustainability report, not a tax-exemption certificate. AnnaSetu does not guarantee tax deductions or legal exemptions.</p>
+        <button type="button" id="btn-esg-methodology" class="btn btn-secondary">Methodology</button>
       </section>
+
 
     </section>
 
@@ -298,8 +333,9 @@
     <section id="view-roi" class="view" role="tabpanel">
       <header class="bm-head">
         <h2>Business Model &amp; ROI</h2>
-        <p class="hint">Illustrative assumptions — synthetic data, not financial advice.</p>
       </header>
+      <div id="csr-console" class="csr-console" hidden></div>
+
 
       <div id="bm-pillars" class="pillar-grid">
         <article class="pillar-card">
@@ -380,7 +416,7 @@
   </div>
 
   <footer class="app-footer">
-    <p id="legal-text" class="legal">Synthetic demo only. Caterers, NGOs, riders, localities, and coordinates are fictional placeholders. Phone numbers are placeholders such as +91-XXXXX-00000. AnnaSetu coordinates pickups only and does not certify food safety or guarantee tax/legal benefits.</p>
+    <p id="legal-text" class="legal">All values, entities, coordinates, and metrics shown are synthetic for demonstration purposes. AnnaSetu coordinates logistics only, does not certify food safety, and makes no tax or legal benefit claims.</p>
     <div class="reset-row">
       <button type="button" id="reset-demo-btn" class="btn-secondary btn-reset">Reset Demo Data</button>
     </div>

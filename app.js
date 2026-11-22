@@ -953,7 +953,7 @@
     html += trackerHtml(b);
     html += stageDetailHtml(b, stageIndexOf(b));
     html += '<div class="radar-wrap">' + renderRadar(b) + "</div>";
-    html += '<p class="safety-note">Logistics only \u00B7 Not a food-safety certification</p>';
+    html += '<p class="safety-note">Logistics only</p>';
     html += cardFooterHtml(b, actionHtml);
     html += "</article>";
     return html;
@@ -1003,16 +1003,19 @@
     lockExpired(now);
 
     var list = state.batches.filter(function (b) {
-      return (!state.catererFilter || b.caterer === state.catererFilter) && matchesFilters(b);
+      return (!state.catererFilter || b.caterer === state.catererFilter) && matchesFilters(b) &&
+        personaAllows(b, "caterer");
     }).sort(function (a, b) { return b.preparedAt - a.preparedAt; });
 
     var box = $("caterer-list");
     if (box) {
       if (!list.length) {
-        box.innerHTML = emptyHtml("No batches yet. Post one using the form.");
+        box.innerHTML = state.activeRole === "ramesh"
+          ? '<p class="empty">No batches from ' + esc(RAMESH_CATERER) + " yet</p>"
+          : emptyHtml("No batches yet. Post one using the form.");
       } else {
         box.innerHTML = list.map(function (b) {
-          return cardHtml(b, now, "");
+          return cardHtml(b, now, personaActionHtml(b));
         }).join("");
       }
     }
@@ -1115,21 +1118,21 @@
     $("feed-msg").textContent = state.feedMsg;
     syncDispatchFilterButtons();
 
-    var posted = state.batches.filter(function (b) { return b.status === "Posted" && passesDispatchFilter(b, now) && matchesFilters(b); })
+    var posted = state.batches.filter(function (b) { return b.status === "Posted" && passesDispatchFilter(b, now) && matchesFilters(b) && personaAllows(b, "feed"); })
       .sort(function (a, b) { return a.expiresAt - b.expiresAt; });
     var postedBox = $("feed-posted");
     if (postedBox) {
       postedBox.innerHTML = posted.length ? posted.map(function (b) {
-        return cardHtml(b, now, feedActionsHtml(b));
+        return cardHtml(b, now, feedActionsHtml(b) + personaActionHtml(b));
       }).join("") : emptyHtml("No open batches right now.");
     }
 
-    var active = state.batches.filter(function (b) { return b.status !== "Posted" && passesDispatchFilter(b, now) && matchesFilters(b); })
+    var active = state.batches.filter(function (b) { return b.status !== "Posted" && passesDispatchFilter(b, now) && matchesFilters(b) && personaAllows(b, "feed"); })
       .sort(function (a, b) { return b.preparedAt - a.preparedAt; });
     var activeBox = $("feed-active");
     if (activeBox) {
       activeBox.innerHTML = active.length ? active.map(function (b) {
-        return cardHtml(b, now, feedActionsHtml(b));
+        return cardHtml(b, now, feedActionsHtml(b) + personaActionHtml(b));
       }).join("") : emptyHtml("No active rescues yet.");
     }
     renderQueueRail();
@@ -1501,7 +1504,6 @@
       "<li>" + esc("CO2e prevented: " + fmtNum(s.co2Kg) + " kg (kg \u00D7 2.5)") + "</li>" +
       "<li>" + esc("Zero-waste score: " + s.zeroWasteScore + "% (Delivered kg \u00F7 posted kg this month \u00D7 100)") + "</li>" +
       "</ul>" +
-      '<p class="hint">' + esc("Illustrative / synthetic. Operational sustainability report, not a tax-exemption certificate.") + "</p>" +
       "</div>";
   }
 
@@ -1662,7 +1664,7 @@
       kpiCardHtml("Caterer ROI Multiple", roiText,
         "raw food savings per caterer \u00F7 \u20B9" + bmInt(SUBSCRIPTION_INR), "kpi-emerald") +
       kpiCardHtml("Cost Per Meal Rescued", cpmText,
-        "Illustrative assumption: \u20B9" + bmInt(RIDER_COST_PER_RESCUE_INR) + " rider cost per rescue + \u20B9" +
+        "Assumption: rider cost per rescue (\u20B9" + bmInt(RIDER_COST_PER_RESCUE_INR) + ") + \u20B9" +
         bmInt(PLATFORM_FIXED_COST_INR_PER_MONTH) + " fixed platform cost per month, \u00F7 meals rescued", "") +
       kpiCardHtml("Monthly Meals & CO2e Impact at Scale", bmInt(r.totalMealsPerMonth) + " meals",
         "CO2e " + bmInt(r.co2Kg) + " kg (rescued kg \u00D7 " + CO2_FACTOR + "); meals = kg \u00F7 " + MEAL_KG,
@@ -1710,7 +1712,7 @@
       "Timestamped batch ledger and monthly diversion summary (kg, CO2e)"],
     ["ESG / CSR auditability",
       "ESG claims are anecdotal and hard to verify",
-      "Batch-level CSV audit log behind every ESG summary (operational report, not a tax certificate)"],
+      "Batch-level CSV audit log behind every ESG summary"],
     ["Community impact",
       "Surplus meals are lost",
       "Meals routed to NGOs (kg \u00F7 0.4 kg per meal)"],
@@ -1796,6 +1798,47 @@
     }
   }
 
+  // Merges one saved NGO over the seed NGO with the same id (D.NGOS).
+  // Saved own fields overlay the seed copy. Null or undefined fields fall back to the seed value.
+  // priorityAlert keeps the saved value when it is a boolean. dailyCapacityKg falls back to capacity / 5.
+  function mergeNgoWithSeed(saved) {
+    var seed = (D.NGOS || []).filter(function (s) { return s && s.id === saved.id; })[0] || null;
+    var out = seed ? JSON.parse(JSON.stringify(seed)) : {};
+    Object.keys(saved).forEach(function (k) { out[k] = saved[k]; });
+    ["avgAcceptMins", "dailyCapacityKg", "coldStorage", "diet", "priorityAlert"].forEach(function (f) {
+      if ((out[f] === undefined || out[f] === null) && seed) {
+        out[f] = JSON.parse(JSON.stringify(seed[f]));
+      }
+    });
+    if (!(Number(out.dailyCapacityKg) > 0)) {
+      out.dailyCapacityKg = Math.round((Number(out.capacity) || 0) / 5);
+    }
+    if (typeof saved.priorityAlert === "boolean") {
+      out.priorityAlert = saved.priorityAlert;
+    } else {
+      out.priorityAlert = !!out.priorityAlert;
+    }
+    return out;
+  }
+
+  // Per-NGO merge keyed by id. Returns the saved NGOs merged over seed, plus any seed NGO missing from the saved list.
+  function mergeNgoList(savedList) {
+    var seeds = D.NGOS || [];
+    var out = [];
+    var seen = {};
+    (Array.isArray(savedList) ? savedList : []).forEach(function (s) {
+      if (!s || typeof s !== "object") return;
+      out.push(mergeNgoWithSeed(s));
+      seen[String(s.id)] = true;
+    });
+    seeds.forEach(function (seed) {
+      if (!seed || seen[String(seed.id)]) return;
+      out.push(JSON.parse(JSON.stringify(seed)));
+      seen[String(seed.id)] = true;
+    });
+    return out;
+  }
+
   // Restores saved fields into state. Keeps seed defaults for anything missing or invalid.
   // All batch timestamps are numeric milliseconds (no Date objects), so JSON round-trips them.
   function loadDb() {
@@ -1827,8 +1870,7 @@
     }
     if (Array.isArray(saved.batches)) state.batches = saved.batches;
     if (Array.isArray(saved.ngos) && saved.ngos.length > 0) {
-      // Old saves with fewer NGOs than the seed list get the current seed list instead.
-      state.ngos = saved.ngos.length >= D.NGOS.length ? saved.ngos : JSON.parse(JSON.stringify(D.NGOS));
+      state.ngos = mergeNgoList(saved.ngos);
     }
     if (typeof saved.nextNum === "number" && isFinite(saved.nextNum)) state.nextNum = saved.nextNum;
     if (typeof saved.activeRole === "string" && ROLE_VIEWS.hasOwnProperty(saved.activeRole)) {
@@ -1860,8 +1902,9 @@
     var map = ROLE_VIEWS[state.activeRole];
     if (map.filter) state.dispatchFilter = map.filter;
     var label = sel && sel.options && sel.selectedIndex >= 0 ? sel.options[sel.selectedIndex].textContent : state.activeRole;
+    renderAll();
     setView(map.view);
-    setRoleStatus("Signed in as " + label + " \u2014 synthetic demo persona.");
+    setRoleStatus("Signed in as " + label);
   }
 
   // Restores the load-time seed without reloading the page.
@@ -1875,7 +1918,7 @@
     var delta = Date.now() - seedSnapshot.now;
     state.batches = JSON.parse(JSON.stringify(seedSnapshot.batches));
     state.batches.forEach(function (b) { shiftBatchTimes(b, delta); });
-    state.ngos = JSON.parse(JSON.stringify(seedSnapshot.ngos));
+    state.ngos = mergeNgoList(seedSnapshot.ngos);
     state.nextNum = seedSnapshot.nextNum;
     state.riderIdx = 0;
     state.feedMsg = "";
@@ -1994,6 +2037,9 @@
   var renderers = {
     caterer: function () { renderCatererList(); },
     feed: function () { renderFeed(); },
+    radar: function () { renderCorridorMap(); renderCorridorEta(); },
+    ngos: function () { renderNgoNetwork(); renderCapacityBars(); },
+    safety: function () { renderSafety(); },
     impact: function () { renderImpact(); },
     roi: function () { renderBusinessModel(); }
   };
@@ -2061,6 +2107,916 @@
     pill.appendChild(document.createTextNode(label));
   }
 
+  // ---------- v6 operational modules (persona, badges, corridor, NGO network, split claim, safety, ESG) ----------
+  var RAMESH_CATERER = "Deccan Royal Caterers";
+  var MEERA_NGO_ID = "ngo-annapurna";
+  var CSR_RATE_INR = D.CSR_RESCUE_RATE || 40;
+  var SAFE_HOURS = D.SAFE_HOURS_DEFAULT || 4;
+
+  var RING_COLOR = { green: "#16a34a", amber: "#f59e0b", red: "#dc2626" };
+  // Non-persisted session state (lost on reload, never written to localStorage).
+  var sponsoredIds = new Set();
+  var receiptIds = new Set();
+  var riderSteps = {};
+  var estimatorBuilt = false;
+  var methodologyBuilt = false;
+  // Fixed schematic positions in the 680 x 420 corridor viewBox (about 1.7x / 1.4x the old layout).
+  // Names match LOCALITY_LIST. Hitech City is the hub. Pairwise spacing is at least 110 px.
+  var CORRIDOR_POS = {
+    "Madhapur": { x: 255, y: 168 },
+    "Gachibowli": { x: 153, y: 266 },
+    "Kondapur": { x: 391, y: 126 },
+    "Jubilee Hills": { x: 510, y: 238 },
+    "Hitech City": { x: 306, y: 294 },
+    "Banjara Hills": { x: 580, y: 350 }
+  };
+
+  function isActiveBatch(b) { return b.status !== "Delivered" && b.status !== "Expired"; }
+
+  // Remaining safe minutes: safeHours x 60 minus minutes since preparedAt. Negative once past the window.
+  function safeMinsLeft(b, now) {
+    var hours = Number(b.safeHours);
+    if (!isFinite(hours) || hours <= 0) hours = SAFE_HOURS;
+    return hours * 60 - (now - Number(b.preparedAt)) / MIN;
+  }
+
+  // green > 60 min, amber 15-60 min, red under 15 min (including past the window).
+  function safeClass(mins) {
+    if (mins < 15) return "red";
+    if (mins > 60) return "green";
+    return "amber";
+  }
+
+  // Kg assigned to an NGO (Claimed, Collected or Delivered). Treated as today's intake, as in ngoUsed().
+  function kgAcceptedBy(ngoId) {
+    var total = 0;
+    state.batches.forEach(function (b) {
+      if (b.ngoId === ngoId && (b.status === "Claimed" || b.status === "Collected" || b.status === "Delivered")) {
+        total += Number(b.kg) || 0;
+      }
+    });
+    return total;
+  }
+
+  // ETA in minutes at the 25 km/h rule.
+  function etaMinFor(ngo) { return Math.round(Number(ngo.distance_km) / 25 * 60); }
+
+  function corridorPos(name) {
+    return Object.prototype.hasOwnProperty.call(CORRIDOR_POS, name) ? CORRIDOR_POS[name] : null;
+  }
+
+  // Persona filter. scope "caterer" = caterer list, "feed" = dispatch feed.
+  function personaAllows(b, scope) {
+    if (scope === "caterer" && state.activeRole === "ramesh") return b.caterer === RAMESH_CATERER;
+    if (scope === "feed" && state.activeRole === "meera") return b.diet === "Veg";
+    return true;
+  }
+
+  // Extra card action for the active persona (trusted markup; ids escaped).
+  function personaActionHtml(b) {
+    if (state.activeRole === "ramesh" && b.caterer === RAMESH_CATERER && b.status === "Delivered") {
+      return '<button type="button" class="btn btn-secondary" data-action="csr-cert" data-id="' + esc(b.id) +
+        '">Download CSR Impact Summary</button>';
+    }
+    if (state.activeRole === "meera" && b.ngoId === MEERA_NGO_ID) {
+      if (b.status === "Delivered") {
+        if (receiptIds.has(b.id)) return '<p class="card-status">Receipt confirmed</p>';
+        return '<button type="button" class="btn btn-primary" data-action="confirm-receipt" data-id="' + esc(b.id) +
+          '">Confirm Receipt &amp; Rate Packaging</button>';
+      }
+      var ngo = ngoById(MEERA_NGO_ID);
+      if (ngo && isLive(b)) return '<p class="card-status">ETA ' + esc(etaMinFor(ngo)) + " min</p>";
+    }
+    return "";
+  }
+
+  // Ramesh: download a plain-text logistics record for one Delivered batch. No tax or certification claim.
+  function downloadCsrCertificate(id) {
+    var b = findBatch(id);
+    if (!b || b.caterer !== RAMESH_CATERER || b.status !== "Delivered") return false;
+    var kg = Number(b.kg) || 0;
+    var lines = [
+      "AnnaSetu CSR Impact Summary",
+      "Batch ID: " + b.id,
+      "Dish: " + b.food,
+      "Quantity: " + fmtNum(kg) + " kg",
+      "Meals (kg / 0.4): " + Math.round(kg / MEAL_KG),
+      "CO2e (kg x 2.5): " + fmtNum(Math.round(kg * CO2_FACTOR * 10) / 10) + " kg",
+      "Synthetic demo record. Logistics only."
+    ];
+    var blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = b.id + "-csr-impact.txt";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 0);
+    showToast("Record downloaded", b.id + " logistics record saved", "ok");
+    return false;
+  }
+
+  // Ramesh: recurring-dish waste insight for this kitchen only.
+  function catererInsightText() {
+    var byDish = {};
+    state.batches.forEach(function (b) {
+      if (b.caterer !== RAMESH_CATERER) return;
+      byDish[b.food] = (byDish[b.food] || 0) + (Number(b.kg) || 0);
+    });
+    var top = null;
+    Object.keys(byDish).forEach(function (d) {
+      if (top === null || byDish[d] > byDish[top]) top = d;
+    });
+    if (top === null) return "No surplus recorded for this kitchen yet.";
+    var kg = byDish[top];
+    var saving = Math.round((kg / MEAL_KG) * MEAL_VALUE_INR);
+    return "Recurring waste: " + top + " \u00B7 " + fmtNum(kg) + " kg. Estimated saving \u20B9" +
+      saving.toLocaleString("en-IN") + " (assumes \u20B965 per meal).";
+  }
+
+  // Meera: confirm receipt of a Delivered NGO batch. Status is unchanged; the id is kept in memory only.
+  function confirmReceipt(id) {
+    var b = findBatch(id);
+    if (!b || b.status !== "Delivered" || b.ngoId !== MEERA_NGO_ID) return false;
+    receiptIds.add(b.id);
+    showToast("Receipt confirmed", b.id + " receipt noted. Batch status unchanged.", "ok");
+    return true;
+  }
+
+  // Arjun: rider mission step state, keyed by batch id (not persisted).
+  function riderBatches() {
+    return state.batches.filter(function (b) {
+      return !!b.rider && String(b.rider).indexOf("R-07") !== -1 && b.status !== "Expired";
+    }).sort(function (a, c) { return a.expiresAt - c.expiresAt; });
+  }
+
+  function isRider07(b) {
+    return !!b && !!b.rider && String(b.rider).indexOf("R-07") !== -1 && b.status !== "Expired";
+  }
+
+  function riderStep(id) {
+    if (!riderSteps[id]) riderSteps[id] = { arrived: false, tempOk: false, temp: null, seal: false, handed: false };
+    return riderSteps[id];
+  }
+
+  // Synthetic OTP: last 4 digits of the numeric part of the batch id, zero-padded.
+  function demoOtp(id) {
+    var digits = String(id).replace(/\D/g, "");
+    return ("0000" + digits.slice(-4)).slice(-4);
+  }
+
+  function handoverCount() {
+    var n = 0;
+    Object.keys(riderSteps).forEach(function (id) {
+      if (riderSteps[id].handed) n += 1;
+    });
+    return n;
+  }
+
+  function riderArrive(id) {
+    var b = findBatch(id);
+    if (!isRider07(b)) return false;
+    riderStep(id).arrived = true;
+    showToast("Arrived", b.id + " arrival logged", "ok");
+    return true;
+  }
+
+  function riderLogTemp(id, scope) {
+    var b = findBatch(id);
+    if (!isRider07(b)) return false;
+    var input = scope ? scope.querySelector('[id="rider-temp-' + id + '"]') : null;
+    var seal = scope ? scope.querySelector('[id="rider-seal-' + id + '"]') : null;
+    var raw = input ? String(input.value).trim() : "";
+    var temp = raw === "" ? NaN : Number(raw);
+    if (!isFinite(temp) || temp < 0 || temp > 100) {
+      showToast("Temperature not logged", "Enter a number from 0 to 100 \u00B0C.", "warn");
+      return false;
+    }
+    var s = riderStep(id);
+    s.tempOk = true;
+    s.temp = temp;
+    s.seal = !!(seal && seal.checked);
+    showToast("Temperature logged", b.id + " at " + temp + " \u00B0C", "ok");
+    return true;
+  }
+
+  function riderHandover(id, scope) {
+    var b = findBatch(id);
+    if (!isRider07(b)) return false;
+    var s = riderStep(id);
+    if (s.handed) return false;
+    if (!s.arrived || !s.tempOk) {
+      showToast("Handover locked", "Mark arrival and log the temperature first.", "warn");
+      return false;
+    }
+    var input = scope ? scope.querySelector('[id="rider-otp-' + id + '"]') : null;
+    var code = input ? String(input.value).trim() : "";
+    if (code !== demoOtp(id)) {
+      showToast("OTP does not match", "Check the 4-digit handover code.", "warn");
+      return false;
+    }
+    s.handed = true;
+    showToast("Handover complete", b.id + " \u00B7 \u20B9" + CSR_RATE_INR + " fuel stipend counted", "ok");
+    return true;
+  }
+
+  // Vikram: sponsor an active rescue (session only).
+  function sponsorRescue(id) {
+    var b = findBatch(id);
+    if (!b || !isActiveBatch(b) || sponsoredIds.has(b.id)) return false;
+    sponsoredIds.add(b.id);
+    showToast("Rescue sponsored", b.id + " \u00B7 \u20B9" + CSR_RATE_INR + " CSR rescue credit", "ok");
+    return true;
+  }
+
+  // Split a Posted batch above 40 kg: half the kg moves to a new Claimed batch for the chosen NGO.
+  function splitClaim(id, ngoId) {
+    var b = findBatch(id);
+    var ngo = ngoById(ngoId);
+    if (!b || !ngo) return false;
+    if (b.status !== "Posted" || b.locked) {
+      showToast("Split not created", b.id + " is no longer Posted.", "warn");
+      return false;
+    }
+    var kg = Number(b.kg) || 0;
+    if (kg <= 40) return false;
+    if (!dietOk(ngo.pref, b.diet)) {
+      showToast("Split not created", ngo.name + " does not accept " + b.diet + ".", "warn");
+      return false;
+    }
+    var half = Math.round(kg * 5) / 10;
+    var newMeals = Math.round((Number(b.servings) || 0) / 2);
+    if (remaining(ngo) < newMeals) {
+      showToast("Split not created", ngo.name + " has no room for the split half.", "warn");
+      return false;
+    }
+    var now = Date.now();
+    var rider = RIDERS[state.riderIdx % RIDERS.length];
+    state.riderIdx += 1;
+    var postedAt = eventAt(b, "Posted");
+    var clone = JSON.parse(JSON.stringify(b));
+    var newId = "AS-" + state.nextNum;
+    state.nextNum += 1;
+    clone.id = newId;
+    clone.kg = half;
+    clone.servings = newMeals;
+    clone.status = "Claimed";
+    clone.ngoId = ngo.id;
+    clone.rider = rider.name;
+    clone.vehicle = rider.vehicle;
+    clone.etaMin = Math.max(5, Math.round(Number(ngo.distance_km) / 0.25));
+    clone.claimedAt = now;
+    clone.tempChecked = false;
+    clone.dispatchNote = null;
+    clone.locked = false;
+    clone.events = [{ type: "Posted", at: postedAt !== null ? postedAt : now }, { type: "Claimed", at: now }];
+    b.kg = Math.round((kg - half) * 10) / 10;
+    b.servings = (Number(b.servings) || 0) - newMeals;
+    state.batches.push(clone);
+    state.feedMsg = newId + " split from " + b.id + " and claimed by " + ngo.name + ".";
+    showToast("Split claim created", newId + " claimed by " + ngo.name, "ok");
+    return true;
+  }
+
+  // One delegated click listener (attached in init). Unknown ids are no-ops.
+  function onModuleClick(e) {
+    var t = e.target;
+    var el = t && t.closest ? t.closest("[data-action]") : null;
+    if (!el) return;
+    var action = el.getAttribute("data-action");
+    var id = el.getAttribute("data-id") || "";
+    var scope = el.closest ? el.closest(".rider-batch") : null;
+    var changed = false;
+    if (action === "csr-cert") changed = downloadCsrCertificate(id);
+    else if (action === "confirm-receipt") changed = confirmReceipt(id);
+    else if (action === "rider-arrive") changed = riderArrive(id);
+    else if (action === "rider-log-temp") changed = riderLogTemp(id, scope);
+    else if (action === "rider-handover") changed = riderHandover(id, scope);
+    else if (action === "sponsor") changed = sponsorRescue(id);
+    else if (action === "split-claim") changed = splitClaim(id, el.getAttribute("data-ngo") || "");
+    else return;
+    if (changed) {
+      renderAll();
+      saveDb();
+    }
+  }
+
+  // Delegated change listener for the NGO priority-alert checkboxes (attached in init).
+  function onModuleChange(e) {
+    var t = e.target;
+    if (!t || !t.getAttribute || t.getAttribute("data-action") !== "priority-alert") return;
+    var ngo = ngoById(t.getAttribute("data-id") || "");
+    if (!ngo) return;
+    ngo.priorityAlert = !!t.checked;
+    saveDb();
+  }
+
+  // Persona banner, kitchen insight, and the rider / CSR workspaces. Driven by state.activeRole.
+  function setPanel(id, on, build) {
+    var el = $(id);
+    if (!el) return;
+    el.innerHTML = on ? build() : '<p class="hint">Select this persona in the header to open the workspace.</p>';
+  }
+
+  function riderMissionHtml() {
+    var list = riderBatches();
+    if (!list.length) return '<p class="empty">No R-07 batches on the mission right now.</p>';
+    var handed = handoverCount();
+    var head = '<div class="rider-stipend">CSR fuel stipend: <strong>\u20B9' + esc(handed * CSR_RATE_INR) +
+      "</strong> (" + esc(handed) + " handovers \u00D7 \u20B9" + esc(CSR_RATE_INR) + ")</div>";
+    return head + list.map(function (b) {
+      var s = riderSteps[b.id] || { arrived: false, tempOk: false, temp: null, seal: false, handed: false };
+      var step1 = '<div class="rider-step' + (s.arrived ? " done" : "") + '"><h4>1 Arrive</h4>' +
+        (s.arrived ? "<p>Arrived at the caterer.</p>" :
+          '<button type="button" class="btn btn-primary" data-action="rider-arrive" data-id="' + esc(b.id) +
+          '">Mark arrived</button>') + "</div>";
+      var step2 = '<div class="rider-step' + (s.tempOk ? " done" : "") + '"><h4>2 Log temperature and seal check</h4>' +
+        '<input type="number" id="rider-temp-' + esc(b.id) + '" step="0.1" min="0" max="100" placeholder="\u00B0C" aria-label="Temperature in Celsius"> ' +
+        '<label><input type="checkbox" id="rider-seal-' + esc(b.id) + '"' + (s.seal ? " checked" : "") + "> Seal intact</label> " +
+        '<button type="button" class="btn btn-secondary" data-action="rider-log-temp" data-id="' + esc(b.id) +
+        '">Log temperature</button>' +
+        (s.tempOk ? '<p class="hint">Logged ' + esc(s.temp) + " \u00B0C</p>" : "") + "</div>";
+      var step3 = '<div class="rider-step' + (s.handed ? " done" : "") + '"><h4>3 4-digit handover</h4>' +
+        (s.handed ? "<p>Handover complete.</p>" :
+          '<p class="hint">Demo OTP: ' + esc(demoOtp(b.id)) + "</p>" +
+          '<input type="text" id="rider-otp-' + esc(b.id) + '" inputmode="numeric" maxlength="4" placeholder="0000" aria-label="4-digit handover code"> ' +
+          '<button type="button" class="btn btn-primary" data-action="rider-handover" data-id="' + esc(b.id) +
+          '">Confirm handover</button>') + "</div>";
+      return '<article class="card rider-batch" data-id="' + esc(b.id) + '"><div class="card-header"><div>' +
+        '<h3 class="card-title">' + esc(b.id) + '</h3><p class="card-subtitle">' + esc(b.food) + " \u00B7 " +
+        esc(b.rider) + "</p></div></div>" + step1 + step2 + step3 + "</article>";
+    }).join("");
+  }
+
+  function csrConsoleHtml() {
+    var active = state.batches.filter(isActiveBatch).sort(function (a, c) { return a.expiresAt - c.expiresAt; });
+    var count = 0;
+    var meals = 0;
+    sponsoredIds.forEach(function (id) {
+      var b = findBatch(id);
+      if (!b) return;
+      count += 1;
+      meals += Number(b.servings) || 0;
+    });
+    var avg = meals > 0 ? (CSR_RATE_INR * count / meals).toFixed(2) : null;
+    var totals = '<div class="csr-totals">' +
+      kpiCardHtml("Sponsored rescues", String(count), "this session", "") +
+      kpiCardHtml("Cost per meal", avg === null ? "\u2014" : "\u20B9" + avg, "average across sponsored rescues", "") +
+      "</div>";
+    var rows = active.map(function (b) {
+      var m = Number(b.servings) || 0;
+      var cpm = m > 0 ? "\u20B9" + (CSR_RATE_INR / m).toFixed(2) : "\u2014";
+      var action = sponsoredIds.has(b.id) ? '<span class="card-status">Sponsored</span>' :
+        '<button type="button" class="sponsor-badge" data-action="sponsor" data-id="' + esc(b.id) +
+        '">Sponsor Open Rescue (\u20B9' + esc(CSR_RATE_INR) + ")</button>";
+      return '<div class="csr-row"><span class="batch-id-pill">' + esc(b.id) + "</span> <span>" + esc(b.food) +
+        " \u00B7 " + esc(m) + " meals \u00B7 cost per meal " + esc(cpm) + "</span> " + action + "</div>";
+    }).join("");
+    return totals + (rows || '<p class="empty">No active batches to sponsor.</p>');
+  }
+
+  function renderPersona() {
+    var role = state.activeRole;
+    var banner = $("persona-banner");
+    var labels = {
+      ramesh: "Deccan Royal Caterers \u00B7 kitchen view",
+      meera: "Annapurna Seva Trust \u00B7 receiver view",
+      arjun: "Rider R-07 \u00B7 mission view",
+      vikram: "CSR sponsor \u00B7 console view"
+    };
+    if (banner) {
+      banner.textContent = Object.prototype.hasOwnProperty.call(labels, role) ? labels[role] : "";
+      banner.hidden = !role;
+    }
+    var insight = $("persona-insight");
+    if (role === "ramesh" && banner && !insight && banner.parentNode) {
+      insight = document.createElement("p");
+      insight.id = "persona-insight";
+      insight.className = "hint";
+      banner.parentNode.insertBefore(insight, banner.nextSibling);
+    }
+    if (insight) insight.textContent = role === "ramesh" ? catererInsightText() : "";
+    setPanel("rider-mission", role === "arjun", riderMissionHtml);
+    setPanel("csr-console", role === "vikram", csrConsoleHtml);
+  }
+
+  // Short NGO labels for map pills. Unknown ids fall back to the first word of the name.
+  var NGO_SHORT = {
+    "ngo-annapurna": "Annapurna",
+    "ngo-asha": "Asha",
+    "ngo-hope": "Hope St",
+    "ngo-sahayam": "Sahayam",
+    "ngo-karuna": "Karuna",
+    "ngo-nirmal": "Nirmal"
+  };
+
+  function ngoShortName(n) {
+    if (Object.prototype.hasOwnProperty.call(NGO_SHORT, n.id)) return NGO_SHORT[n.id];
+    return String(n.name || "").split(" ")[0];
+  }
+
+  // Rider short id such as "R-07", taken from the rider name. Falls back to the full name or "EV".
+  function riderShortId(name) {
+    var m = /R-\d+/.exec(String(name || ""));
+    if (m) return m[0];
+    return name ? String(name) : "EV";
+  }
+
+  // White label pill with escaped text. x = left edge, cy = vertical centre.
+  function corridorTag(x, cy, label, cls) {
+    var w = Math.round(String(label).length * 6.2 + 14);
+    return '<rect class="' + cls + '-bg" x="' + x + '" y="' + (cy - 9) + '" width="' + w +
+      '" height="18" rx="6" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1"></rect>' +
+      '<text class="' + cls + '" x="' + (x + 7) + '" y="' + (cy + 4) + '" font-size="10" fill="#0F172A">' +
+      esc(label) + "</text>";
+  }
+
+  // Corridor map (viewBox 680x420): legend, grid and glow, range rings, river and ring road,
+  // localities, caterer pins (ring = safe window), NGO shelter pins, routes and live rider dots.
+  function renderCorridorMap() {
+    var el = $("corridor-map");
+    if (!el) return;
+    var now = Date.now();
+    var hub = corridorPos("Hitech City") || { x: 306, y: 294 };
+    var names = Object.keys(CORRIDOR_POS);
+
+    // NGO shelter pins: right of and below their locality dot, stacked per locality.
+    var ngoPin = {};
+    var ngoCount = {};
+    state.ngos.forEach(function (n) {
+      var p = corridorPos(n.locality);
+      if (!p) return;
+      var k = ngoCount[n.locality] || 0;
+      ngoCount[n.locality] = k + 1;
+      ngoPin[n.id] = { x: p.x + 16, y: p.y + 50 + 24 * k, ngo: n };
+    });
+
+    // Caterer pins: left of and above their locality dot, stacked per locality.
+    var catPin = {};
+    var catCount = {};
+    state.batches.filter(isActiveBatch).forEach(function (b) {
+      var p = corridorPos(b.locality);
+      if (!p) return;
+      var k = catCount[b.locality] || 0;
+      catCount[b.locality] = k + 1;
+      var mins = safeMinsLeft(b, now);
+      catPin[b.id] = { x: p.x - 16, y: p.y - 30 - 24 * k, b: b, mins: mins, cls: safeClass(mins) };
+    });
+
+    // Routes: Claimed or Collected batches with an assigned NGO that is on the map.
+    var routes = [];
+    state.batches.forEach(function (b) {
+      if (b.status !== "Claimed" && b.status !== "Collected") return;
+      var from = catPin[b.id];
+      var to = b.ngoId ? ngoPin[b.ngoId] : null;
+      if (!from || !to) return;
+      routes.push({ b: b, from: from, to: to, idx: routes.length });
+    });
+
+    var defs = "<defs>" +
+      '<pattern id="corridor-grid" width="34" height="34" patternUnits="userSpaceOnUse">' +
+      '<path d="M 34 0 L 0 0 0 34" fill="none" stroke="#E2E8F0" stroke-width="0.6"></path></pattern>' +
+      '<radialGradient id="corridor-glow" cx="50%" cy="50%" r="50%">' +
+      '<stop offset="0%" stop-color="#D1FAE5" stop-opacity="1"></stop>' +
+      '<stop offset="100%" stop-color="#D1FAE5" stop-opacity="0"></stop></radialGradient>' +
+      routes.map(function (r) {
+        return '<path id="corridor-route-' + r.idx + '" d="M ' + r.from.x + " " + r.from.y + " L " +
+          r.to.x + " " + r.to.y + '" fill="none" stroke="none"></path>';
+      }).join("") +
+      "</defs>";
+
+    var s = '<rect x="0" y="0" width="680" height="420" fill="#F8FAFC"></rect>' +
+      '<rect x="0" y="0" width="680" height="420" fill="url(#corridor-grid)"></rect>' +
+      '<circle cx="' + hub.x + '" cy="' + hub.y + '" r="170" fill="url(#corridor-glow)"></circle>';
+
+    [80, 160, 240].forEach(function (radius) {
+      s += '<circle class="corridor-range" cx="' + hub.x + '" cy="' + hub.y + '" r="' + radius +
+        '" fill="none" stroke="#CBD5E1" stroke-width="1" stroke-dasharray="4 4"></circle>';
+    });
+
+    s += '<path class="corridor-river" d="M 0 150 C 140 120 220 300 360 250 S 560 130 680 190" fill="none" ' +
+      'stroke="#BAE6FD" stroke-width="8" opacity="0.6"></path>' +
+      '<text x="16" y="132" font-size="10" fill="#64748B">Musi River</text>' +
+      '<path class="corridor-ring-road" d="M 60 60 H 620 Q 660 60 660 100 V 340 Q 660 380 620 380 H 60 Q 20 380 20 340 V 100 Q 20 60 60 60 Z" ' +
+      'fill="none" stroke="#E2E8F0" stroke-width="6"></path>' +
+      '<text x="28" y="50" font-size="10" fill="#64748B">Outer Ring Road</text>';
+
+    routes.forEach(function (r) {
+      s += '<line class="route-line" x1="' + r.from.x + '" y1="' + r.from.y + '" x2="' + r.to.x + '" y2="' + r.to.y +
+        '" stroke="#059669" stroke-width="2" stroke-dasharray="6 5"></line>';
+    });
+
+    names.forEach(function (name) {
+      var p = CORRIDOR_POS[name];
+      var w = Math.round(name.length * 6.4 + 16);
+      s += '<circle class="locality-dot" cx="' + p.x + '" cy="' + p.y + '" r="3.5" fill="#94A3B8"></circle>' +
+        '<rect class="locality-pill-bg" x="' + (p.x - w / 2) + '" y="' + (p.y + 15) + '" width="' + w +
+        '" height="18" rx="6" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1"></rect>' +
+        '<text class="locality-label" x="' + p.x + '" y="' + (p.y + 28) +
+        '" text-anchor="middle" font-size="11" fill="#334155" stroke="#FFFFFF" stroke-width="3" paint-order="stroke">' +
+        esc(name) + "</text>";
+    });
+
+    Object.keys(ngoPin).forEach(function (id) {
+      var np = ngoPin[id];
+      s += '<rect class="corridor-ngo" x="' + (np.x - 6) + '" y="' + (np.y - 6) +
+        '" width="12" height="12" rx="3" fill="#059669"><title>' + esc(np.ngo.name) + "</title></rect>" +
+        corridorTag(np.x + 10, np.y, ngoShortName(np.ngo), "corridor-ngo-tag");
+    });
+
+    Object.keys(catPin).forEach(function (id) {
+      var c = catPin[id];
+      var color = RING_COLOR[c.cls];
+      if (c.mins < 60) {
+        s += '<circle class="corridor-urgent" cx="' + c.x + '" cy="' + c.y +
+          '" r="12" fill="none" stroke="#DC2626" stroke-width="1.5"></circle>';
+      }
+      s += '<circle class="corridor-caterer" cx="' + c.x + '" cy="' + c.y + '" r="8" fill="#FFFFFF" stroke="' +
+        color + '" stroke-width="3"><title>' +
+        esc(c.b.id + " \u00B7 " + c.b.caterer + " \u00B7 " + Math.max(0, Math.round(c.mins)) + " min safe") +
+        "</title></circle>" +
+        corridorTag(c.x + 16, c.y, c.b.id + " \u2022 " + fmtNum(c.b.kg) + "kg", "corridor-caterer-tag");
+    });
+
+    routes.forEach(function (r) {
+      if (r.b.status !== "Collected") return;
+      s += '<g class="corridor-rider"><animateMotion dur="6s" repeatCount="indefinite"><mpath href="#corridor-route-' +
+        r.idx + '"></mpath></animateMotion>' +
+        '<circle r="5" fill="#2563EB"></circle>' +
+        '<rect x="-22" y="-27" width="44" height="16" rx="8" fill="#FFFFFF" stroke="#2563EB" stroke-width="1"></rect>' +
+        '<text x="0" y="-15" text-anchor="middle" font-size="10" fill="#1E3A8A">' +
+        esc(riderShortId(r.b.rider)) + "</text></g>";
+    });
+
+    var legend = '<div class="radar-legend">' +
+      '<span class="radar-legend-item"><span class="radar-legend-swatch" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#16a34a"></span>Caterer pickup (ring = safe window)</span>' +
+      '<span class="radar-legend-item"><span class="radar-legend-swatch" style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#059669"></span>Partner NGO shelter</span>' +
+      '<span class="radar-legend-item"><span class="radar-legend-swatch" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#2563EB"></span>Live EV rider route</span>' +
+      '<span class="radar-legend-item"><span class="radar-legend-swatch" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#DC2626"></span>Urgent (&lt;60m)</span>' +
+      "</div>";
+
+    el.innerHTML = legend +
+      '<svg class="corridor-svg" viewBox="0 0 680 420" role="img" aria-label="Hyderabad IT corridor dispatch map">' +
+      defs + s + "</svg>";
+  }
+
+  // Route cards for active, assigned batches: batch id, status, route, EV rider, safe window and ETA (25 km/h rule).
+  function renderCorridorEta() {
+    var box = $("corridor-eta-list");
+    if (!box) return;
+    var now = Date.now();
+    var cards = [];
+    state.batches.forEach(function (b) {
+      if (!isActiveBatch(b) || !b.ngoId) return;
+      var ngo = ngoById(b.ngoId);
+      if (!ngo) return;
+      var mins = Math.max(0, Math.round(safeMinsLeft(b, now)));
+      var left = Math.floor(mins / 60) + "h " + (mins % 60) + "m left";
+      var rider = b.rider ? b.rider : "Not yet assigned";
+      cards.push('<article class="route-card">' +
+        '<header class="route-card-head"><strong>' + esc(b.id) + '</strong> <span class="eta-badge">' +
+        esc(b.status) + "</span></header>" +
+        '<p class="route-card-path">' + esc(b.caterer) + " \u2192 " + esc(ngo.name) + "</p>" +
+        '<p class="route-card-rider"><span class="route-card-label">EV rider</span> ' + esc(rider) + "</p>" +
+        '<p class="route-card-meta"><span>' + esc(left) + "</span> <span>ETA " + esc(etaMinFor(ngo)) +
+        " min</span></p>" +
+        "</article>");
+    });
+    box.innerHTML = cards.length ? cards.join("") : '<p class="empty-state">No active corridor routes yet.</p>';
+  }
+
+
+  // NGO cards: remaining meals today, cold storage, acceptance speed, priority-alert toggle.
+  function renderNgoNetwork() {
+    var grid = $("ngo-network-grid");
+    if (!grid) return;
+    grid.innerHTML = state.ngos.map(function (n) {
+      var accepted = kgAcceptedBy(n.id);
+      var capKg = Number(n.dailyCapacityKg) > 0 ? Number(n.dailyCapacityKg) : Math.round((Number(n.capacity) || 0) / 5);
+      var meals = Math.max(0, Math.round(capKg / MEAL_KG) - Math.round(accepted / MEAL_KG));
+      var focus = state.activeRole === "meera" && n.id === MEERA_NGO_ID;
+      return '<article class="card ngo-network-card' + (focus ? " is-focus" : "") + '" data-ngo="' + esc(n.id) + '">' +
+        '<div class="card-body">' +
+        '<div class="card-header"><div><h3 class="card-title">' + esc(n.name) + '</h3><p class="card-subtitle">' +
+        esc(n.locality) + "</p></div></div>" +
+        '<div class="meta-grid">' +
+        '<div class="meta-pill"><span class="meta-label">Diet</span><span class="meta-value">' + esc(n.diet || n.pref) + "</span></div>" +
+        '<div class="meta-pill"><span class="meta-label">Remaining Meals</span><span class="meta-value">' + esc(meals) + "</span></div>" +
+        '<div class="meta-pill"><span class="meta-label">Cold storage</span><span class="meta-value">' + (n.coldStorage ? "Yes" : "No") + "</span></div>" +
+        '<div class="meta-pill"><span class="meta-label">Accept Speed</span><span class="meta-value">' + esc(n.avgAcceptMins) + " min</span></div>" +
+        "</div>" +
+        "</div>" +
+        '<div class="ngo-card-footer"><label class="priority-toggle"><input type="checkbox" data-action="priority-alert" data-id="' + esc(n.id) + '"' +
+        (n.priorityAlert ? " checked" : "") + "> Request Priority Alert</label></div>" +
+        "</article>";
+    }).join("");
+  }
+
+  // Feed capacity bars: accepted kg / dailyCapacityKg, capped at 100%.
+  function renderCapacityBars() {
+    var box = $("ngo-capacity-bars");
+    if (!box) return;
+    box.innerHTML = state.ngos.map(function (n) {
+      var cap = Number(n.dailyCapacityKg) > 0 ? Number(n.dailyCapacityKg) : Math.round((Number(n.capacity) || 0) / 5);
+      var accepted = kgAcceptedBy(n.id);
+      var rawPct = cap > 0 && isFinite(accepted) ? Math.round(100 * accepted / cap) : 0;
+      var pct = isFinite(rawPct) ? Math.max(0, Math.min(100, rawPct)) : 0;
+      return '<div class="capacity-row"><div class="capacity-head"><span>' + esc(n.name) +
+        "</span><span>" + esc(fmtNum(accepted)) + " / " + esc(fmtNum(cap)) + " kg</span></div>" +
+        '<div class="capacity-track"><span class="capacity-fill" style="width:' + pct + '%"></span></div></div>';
+    }).join("");
+  }
+
+  // Split-claim panel: Posted batches above 40 kg, top two NGOs by the existing score.
+  function renderSplitClaim() {
+    var box = $("split-claim-panel");
+    if (!box) return;
+    var posted = state.batches.filter(function (b) {
+      return b.status === "Posted" && !b.locked && (Number(b.kg) || 0) > 40;
+    });
+    if (!posted.length) {
+      box.innerHTML = '<p class="empty">No posted batches above 40 kg need a split.</p>';
+      return;
+    }
+    box.innerHTML = posted.map(function (b) {
+      var top = rankNgos(state.ngos, { diet: b.diet, meals: b.servings }).slice(0, 2);
+      var buttons = top.length ? top.map(function (m) {
+        return '<button type="button" class="btn btn-secondary" data-action="split-claim" data-id="' + esc(b.id) +
+          '" data-ngo="' + esc(m.ngo.id) + '">Claim with ' + esc(m.ngo.name) + "</button>";
+      }).join("") : '<p class="hint">No compatible NGO with capacity right now.</p>';
+      return '<article class="card split-card"><div class="card-header"><div><h3 class="card-title">' + esc(b.food) +
+        '</h3><p class="card-subtitle">' + esc(b.id) + " \u00B7 " + esc(fmtNum(b.kg)) + " kg</p></div></div>" +
+        '<div class="card-actions">' + buttons + "</div></article>";
+    }).join("");
+  }
+
+  // Shelf-life estimator: built once so typed values survive re-renders. Handling guidance only.
+  function updateEstimator() {
+    var out = $("est-output");
+    var hoursEl = $("est-hours");
+    if (!out || !hoursEl) return;
+    if (hoursEl.value === "") {
+      out.textContent = "Enter hours since cooked.";
+      return;
+    }
+    var hours = Number(hoursEl.value);
+    if (!isFinite(hours) || hours < 0) {
+      out.textContent = "Enter hours since cooked (0 or more).";
+      return;
+    }
+    var storageEl = $("est-storage");
+    var storage = storageEl ? storageEl.value : "";
+    var mins = Math.round(SAFE_HOURS * 60 - hours * 60);
+    out.textContent = (mins > 0 ? "Remaining safe time: " + mins + " min" :
+      "Past the default " + SAFE_HOURS + " h window: do not distribute") +
+      " (" + (storage || "storage not set") + ", default " + SAFE_HOURS + " h window). " +
+      "Handling guidance only.";
+  }
+
+  function buildEstimator(box) {
+    box.innerHTML = '<label>Hours since cooked <input type="number" id="est-hours" min="0" step="0.5"></label> ' +
+      '<label>Storage <select id="est-storage"><option value="Hot-held">Hot-held</option>' +
+      '<option value="Room Temp">Room Temp</option><option value="Chilled">Chilled</option></select></label>' +
+      '<p class="hint" id="est-output"></p>';
+    estimatorBuilt = true;
+    updateEstimator();
+  }
+
+  function renderSafetyChecklist() {
+    var box = $("safety-checklist");
+    if (!box || box.childElementCount) return;
+    var items = ["Check smell and temperature at pickup", "Confirm the allergen list with the caterer",
+      "Check the packaging seal before handover", "Consume within 1 hour of delivery",
+      "Do not distribute past the safe window"];
+    box.innerHTML = "<ul>" + items.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ul>";
+  }
+
+  // Safety monitor: each active batch with remaining safe minutes, allergens and packaging.
+  function renderSafety() {
+    var now = Date.now();
+    var mon = $("safety-monitor");
+    if (mon) {
+      var active = state.batches.filter(isActiveBatch).sort(function (a, c) {
+        return safeMinsLeft(a, now) - safeMinsLeft(c, now);
+      });
+      mon.innerHTML = active.length ? active.map(function (b) {
+        var mins = Math.round(safeMinsLeft(b, now));
+        var cls = safeClass(mins);
+        var allergens = b.allergens && b.allergens.length ? b.allergens.join(", ") : "none declared";
+        var timeText = mins > 0
+          ? Math.floor(mins / 60) + "h " + (mins % 60) + "m left"
+          : "Expired";
+        return '<article class="card safety-card">' +
+          '<div class="card-body">' +
+          '<div class="card-header"><div>' +
+          '<h3 class="card-title">' + esc(b.food) + '</h3><p class="card-subtitle">' + esc(b.id) + " \u00B7 " +
+          esc(b.caterer) + "</p></div></div>" +
+          '<p><span class="safety-time safety-' + cls + '">' + esc(timeText) + "</span></p>" +
+          "<p>Allergens: " + esc(allergens) + "</p>" +
+          "<p>Packaging: " + esc(b.packaging || "not stated") + "</p>" +
+          "</div></article>";
+      }).join("") : '<p class="empty">No active batches to monitor.</p>';
+    }
+    var est = $("safety-estimator");
+    if (est && !estimatorBuilt) buildEstimator(est);
+    renderSafetyChecklist();
+  }
+
+  // Impact KPIs from Delivered batches only.
+  function renderEsgKpis() {
+    var el = $("esg-kpis");
+    if (!el) return;
+    var kg = 0;
+    var turnSum = 0;
+    var turnCount = 0;
+    state.batches.forEach(function (b) {
+      if (b.status !== "Delivered") return;
+      kg += Number(b.kg) || 0;
+      var delivered = deliveredAtOf(b);
+      var claimed = typeof b.claimedAt === "number" ? b.claimedAt : eventAt(b, "Claimed");
+      if (delivered !== null && claimed !== null) {
+        turnSum += (delivered - claimed) / MIN;
+        turnCount += 1;
+      }
+    });
+    var meals = Math.round(kg / MEAL_KG);
+    el.innerHTML =
+      kpiCardHtml("Meals Saved", fmtNum(meals), "meals (kg \u00F7 0.4)", "") +
+      kpiCardHtml("Food Waste Avoided", fmtNum(kg), "kg diverted", "") +
+      kpiCardHtml("CO2e Prevented", fmtNum(Math.round(kg * CO2_FACTOR * 10) / 10), "kg CO2e (kg \u00D7 2.5)", "kpi-emerald") +
+      kpiCardHtml("Value Saved", fmtInr(meals * MEAL_VALUE_INR), "meals \u00D7 \u20B965", "") +
+      kpiCardHtml("Avg Turnaround", fmtNum(turnCount ? Math.round(turnSum / turnCount) : 0), "min, claimed to delivered", "");
+  }
+
+  // Assumptions list, hidden until #btn-esg-methodology is pressed.
+  function renderEsgMethodology() {
+    var el = $("esg-methodology");
+    if (!el || methodologyBuilt) return;
+    methodologyBuilt = true;
+    el.innerHTML = '<p class="hint">Assumptions behind every impact figure:</p><ul>' +
+      ["1 meal = 0.4 kg", "2.5 kg CO2e per kg", "\u20B965 per meal"].map(function (t) {
+        return "<li>" + esc(t) + "</li>";
+      }).join("") + "</ul>";
+    el.hidden = true;
+  }
+
+  function toggleMethodology() {
+    var el = $("esg-methodology");
+    if (!el) return;
+    el.hidden = !el.hidden;
+    var btn = $("btn-esg-methodology");
+    if (btn) btn.setAttribute("aria-expanded", el.hidden ? "false" : "true");
+  }
+
+  // Nav badges. Caterer and radar = active batches; feed = Posted + Claimed + Collected;
+  // safety = under 60 safe minutes and not Expired; impact = Delivered; roi = sponsored this session.
+  function setBadge(key, count) {
+    var els = document.querySelectorAll('[data-badge="' + key + '"]');
+    Array.prototype.forEach.call(els, function (el) { el.textContent = String(count); });
+    return els;
+  }
+
+  function renderNavBadges() {
+    var now = Date.now();
+    var active = 0;
+    var feed = 0;
+    var safety = 0;
+    var delivered = 0;
+    state.batches.forEach(function (b) {
+      if (isActiveBatch(b)) active += 1;
+      if (b.status === "Posted" || b.status === "Claimed" || b.status === "Collected") feed += 1;
+      if (b.status === "Delivered") delivered += 1;
+      if (b.status !== "Expired" && safeMinsLeft(b, now) < 60) safety += 1;
+    });
+    setBadge("caterer", active);
+    setBadge("radar", active);
+    setBadge("feed", feed);
+    setBadge("ngos", state.ngos.length);
+    setBadge("impact", delivered);
+    setBadge("roi", sponsoredIds.size);
+    var safetyEls = setBadge("safety", safety);
+    Array.prototype.forEach.call(safetyEls, function (el) { el.classList.toggle("alert", safety > 0); });
+  }
+
+  // Live Dispatch role visibility (view-feed), driven by state.activeRole. Defined once; called at the end of renderAll().
+  // arjun (rider): hides NGO panel, capacity bars, split-claim, NGO heading and open-Posted column; shows rider-mission;
+  //   batch list limited to rider names containing "R-07".
+  // meera (receiver): keeps only the Annapurna NGO card, hides the rescues column, shows the Annapurna summary line.
+  // Other roles and the empty role: clear every hidden state this function sets.
+  function applyFeedRoleVisibility() {
+    var role = state.activeRole;
+    var isArjun = role === "arjun";
+    var isMeera = role === "meera";
+    var ngoHeading = null;
+    var liveHeading = null;
+    var rescueHeading = null;
+
+    Array.prototype.forEach.call(document.querySelectorAll("#view-feed h2"), function (h) {
+      var t = String(h.textContent || "").trim();
+      if (t === "NGO capacity (servings/day)") ngoHeading = h;
+      else if (t === "Live feed: open Posted batches") liveHeading = h;
+      else if (t === "Rider dispatch: active rescues") rescueHeading = h;
+    });
+
+    // Column container: the section.panel wrapping a heading and its list. Null if not found (never falls back to the whole view).
+    function panelOf(h) {
+      return h && h.closest ? h.closest("section.panel") : null;
+    }
+
+    function setHidden(el, on) {
+      if (el) el.hidden = !!on;
+    }
+
+    function batchForCard(el) {
+      var idEl = el.querySelector ? el.querySelector("[data-id]") : null;
+      var id = idEl ? idEl.getAttribute("data-id") : "";
+      if (!id) return null;
+      for (var i = 0; i < state.batches.length; i++) {
+        if (state.batches[i].id === id) return state.batches[i];
+      }
+      return null;
+    }
+
+    function filterRiderList(list) {
+      if (!list) return;
+      Array.prototype.forEach.call(list.children, function (el) {
+        var b = batchForCard(el);
+        var show;
+        if (b) show = !!b.rider && String(b.rider).indexOf("R-07") !== -1;
+        else show = el.classList.contains("empty") || String(el.textContent || "").indexOf("R-07") !== -1;
+        el.hidden = !show;
+      });
+    }
+
+    function resetList(list) {
+      if (!list) return;
+      Array.prototype.forEach.call(list.children, function (el) { el.hidden = false; });
+    }
+
+    function annapurnaSummaryText() {
+      var ngo = ngoById(MEERA_NGO_ID);
+      if (!ngo) return "Annapurna Seva Trust: details not available.";
+      var capKg = Number(ngo.dailyCapacityKg) > 0 ? Number(ngo.dailyCapacityKg) : Math.round((Number(ngo.capacity) || 0) / 5);
+      var accepted = kgAcceptedBy(ngo.id);
+      var meals = Math.max(0, Math.round(capKg / MEAL_KG) - Math.round(accepted / MEAL_KG));
+      var assigned = null;
+      for (var i = 0; i < state.batches.length; i++) {
+        var b = state.batches[i];
+        if (b.ngoId === MEERA_NGO_ID && b.status !== "Expired") { assigned = b; break; }
+      }
+      var tail = assigned ? "Batch " + assigned.id + " ETA " + etaMinFor(ngo) + " min" : "No batch assigned right now";
+      return "Annapurna Seva Trust: " + meals + " remaining meals | " + tail;
+    }
+
+    // Arjun: NGO panel, capacity bars, split-claim, NGO heading and open-Posted column hidden; rider-mission shown.
+    var ngoPanel = $("ngo-panel");
+    setHidden(ngoPanel, isArjun);
+    setHidden($("ngo-capacity-bars"), isArjun);
+    setHidden($("split-claim-panel"), isArjun);
+    setHidden(ngoHeading, isArjun);
+    setHidden(panelOf(liveHeading), isArjun);
+    // Meera: rescues column hidden.
+    setHidden(panelOf(rescueHeading), isMeera);
+    // rider-mission visibility for other roles is owned by renderPersona()/setPanel(), so only arjun is set here.
+    if (isArjun) setHidden($("rider-mission"), false);
+
+    // NGO cards in #ngo-panel follow state.ngos order (renderNgoPanel). Meera keeps only the Annapurna card.
+    if (ngoPanel) {
+      Array.prototype.forEach.call(ngoPanel.children, function (card, i) {
+        var n = state.ngos[i];
+        card.hidden = isMeera && !!n && n.id !== MEERA_NGO_ID;
+      });
+    }
+
+    // Batch lists: arjun sees only R-07 batches; everyone else sees the full list (persona filters already applied by renderFeed).
+    var postedList = $("feed-posted");
+    var activeList = $("feed-active");
+    if (isArjun) {
+      filterRiderList(postedList);
+      filterRiderList(activeList);
+    } else {
+      resetList(postedList);
+      resetList(activeList);
+    }
+
+    // Annapurna summary line, placed after the feed message. Shown for meera only.
+    var summary = $("feed-annapurna-summary");
+    if (!summary) {
+      var msg = $("feed-msg");
+      if (msg && msg.parentNode) {
+        summary = document.createElement("p");
+        summary.id = "feed-annapurna-summary";
+        summary.className = "hint";
+        msg.parentNode.insertBefore(summary, msg.nextSibling);
+      }
+    }
+    if (summary) {
+      summary.hidden = !isMeera;
+      if (isMeera) summary.textContent = annapurnaSummaryText();
+    }
+  }
+
   function renderAll() {
     populateEsgSelect();
     renderCatererList();
@@ -2070,6 +3026,17 @@
     renderPulse();
     renderHeroStats();
     renderBusinessModel();
+    renderPersona();
+    renderCorridorMap();
+    renderCorridorEta();
+    renderNgoNetwork();
+    renderCapacityBars();
+    renderSplitClaim();
+    renderSafety();
+    renderEsgKpis();
+    renderEsgMethodology();
+    renderNavBadges();
+    applyFeedRoleVisibility();
     if (window.lucide) lucide.createIcons();
     if (!saveSuppressed) saveDb();
   }
@@ -2083,7 +3050,7 @@
       t.classList.toggle("active", on);
       t.setAttribute("aria-selected", on ? "true" : "false");
     });
-    ["caterer", "feed", "impact", "roi"].forEach(function (v) {
+    ["caterer", "feed", "radar", "ngos", "safety", "impact", "roi"].forEach(function (v) {
       var panel = $("view-" + v);
       if (panel) panel.classList.toggle("active", v === view);
     });
@@ -2231,6 +3198,16 @@
     roleSelect.value = state.activeRole || "";
     roleSelect.addEventListener("change", onRoleChange);
   }
+  // Delegated listeners for the v6 modules: attached once here, never inside a render.
+  document.addEventListener("click", onModuleClick);
+  document.addEventListener("change", onModuleChange);
+  var estimatorHost = $("safety-estimator");
+  if (estimatorHost) {
+    estimatorHost.addEventListener("input", updateEstimator);
+    estimatorHost.addEventListener("change", updateEstimator);
+  }
+  var methodologyBtn = $("btn-esg-methodology");
+  if (methodologyBtn) methodologyBtn.addEventListener("click", toggleMethodology);
   renderAll();
 
   // Refresh urgency countdowns and live feed every 30 seconds.
