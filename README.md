@@ -1,3 +1,8 @@
+<p align="center">
+  <img src="AnnaSetuLogo.png" alt="AnnaSetu Logo" width="220" />
+</p>
+<p align="center"><a href="https://projectannasetu.vercel.app"><strong>Live demo: projectannasetu.vercel.app</strong></a></p>
+
 # AnnaSetu
 
 **AnnaSetu** — Hyperlocal Surplus-to-Shelter Food Rescue Bridge (Hyderabad)

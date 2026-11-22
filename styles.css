@@ -1191,13 +1191,37 @@ output { font-weight: 700; color: var(--heading); font-variant-numeric: tabular-
 }
 .queue-item {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 8px;
   background: var(--surface-2);
   border-radius: 12px;
-  padding: 10px 12px;
+  padding: 12px;
   min-width: 0;
+}
+.queue-item-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.queue-item-dish {
+  font-weight: 600;
+  font-size: .92rem;
+  line-height: 1.35;
+  margin: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.queue-item-status {
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-size: .72rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+  margin: 0;
 }
 .queue-item .countdown { font-size: 0.7rem; padding: 1px 8px; }
 .queue-item.urgent {
@@ -1351,3 +1375,31 @@ button:disabled { opacity: .5; cursor: not-allowed; }
     max-width: 100%;
   }
 }
+
+/* ---------- Value Matrix: fixed layout on tablet/desktop ---------- */
+@media (min-width: 641px) {
+  #value-matrix table { table-layout: fixed; width: 100%; min-width: 0; }
+  #value-matrix th, #value-matrix td { white-space: normal; word-wrap: break-word; }
+}
+
+/* ===== v4: zero-scroll navigation with icons ===== */
+.side-nav { overflow-x: visible; }
+@media (min-width: 1025px) {
+  .app-shell { grid-template-columns: 230px minmax(0,1fr) 300px; }
+  .side-nav { display: flex; flex-direction: column; gap: 6px; overflow: hidden; }
+  .side-nav .nav-item { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .side-nav .nav-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+}
+@media (max-width: 1024px) {
+  .side-nav { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; overflow: visible; padding: 8px; }
+  .side-nav .nav-item { min-height: 44px; min-width: 0; justify-content: center; flex-direction: column; gap: 4px; padding: 6px 4px; font-size: .72rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .side-nav .nav-label { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .side-nav .nav-item::before { display: none; }
+}
+.nav-icon { display: inline-flex; align-items: center; justify-content: center; width: 24px; flex-shrink: 0; }
+.nav-icon svg, .nav-icon i, [data-lucide] { width: 18px; height: 18px; stroke-width: 2; }
+.header-controls select, .header-controls input { min-width: 0; }
+.empty-state { text-align: center; color: #64748B; font-size: .9rem; padding: 24px 12px; margin: 0; border: 1px dashed #CBD5E1; border-radius: 12px; background: #F8FAFC; }
+/* ===== end v4 ===== */
+
+

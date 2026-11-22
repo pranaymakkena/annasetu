@@ -79,6 +79,18 @@
           ev("Collected", now - 150 * MIN),
           ev("Delivered", now - 120 * MIN)
         ]
+      }),
+      placed({
+        id: "AS-1005", caterer: { name: "Banjara Banquet Caterers", phone: "+91-XXXXX-00005" }, locality: "Gachibowli",
+        food: "Hyderabadi Chicken Haleem & Naan", diet: "Non-Veg", servings: 110, kg: 25,
+        preparedAt: now - 360 * MIN, expiresAt: now - 180 * MIN,
+        ngoId: "ngo-hope", rider: RIDERS[3].name, claimedAt: now - 260 * MIN, status: "Delivered",
+        events: [
+          ev("Posted", now - 360 * MIN),
+          ev("Claimed", now - 260 * MIN),
+          ev("Collected", now - 230 * MIN),
+          ev("Delivered", now - 200 * MIN)
+        ]
       })
     ];
   }

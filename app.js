@@ -38,6 +38,8 @@
     batches: normalizeSeedBatches(D.buildSeedBatches(Date.now())),
     ngos: D.NGOS,
     catererFilter: "",
+    searchQuery: "",
+    localityFilter: "",
     feedMsg: "",
     nextNum: 1005,
     riderIdx: 0,
@@ -802,7 +804,7 @@
     var closed = b.status === "Delivered" || b.status === "Expired";
     var left = b.expiresAt - now;
     var urgent = !closed && left < URGENT_MIN * MIN;
-    var icon = isVeg ? "\uD83E\uDD57" : "\uD83C\uDF57"; // salad / poultry emoji
+    var icon = isVeg ? '<i data-lucide="leaf" aria-hidden="true"></i>' : '<i data-lucide="flame" aria-hidden="true"></i>';
     // Distance: the assigned NGO if there is one, otherwise the nearest NGO in the registry.
     var ref = ngo;
     if (!ref && state.ngos.length) {
@@ -889,15 +891,18 @@
     lockExpired(now);
 
     var list = state.batches.filter(function (b) {
-      return !state.catererFilter || b.caterer === state.catererFilter;
+      return (!state.catererFilter || b.caterer === state.catererFilter) && matchesFilters(b);
     }).sort(function (a, b) { return b.preparedAt - a.preparedAt; });
 
-    if (!list.length) {
-      $("caterer-list").innerHTML = '<p class="empty">No batches yet. Post one using the form.</p>';
-    } else {
-      $("caterer-list").innerHTML = list.map(function (b) {
-        return cardHtml(b, now, "");
-      }).join("");
+    var box = $("caterer-list");
+    if (box) {
+      if (!list.length) {
+        box.innerHTML = emptyHtml("No batches yet. Post one using the form.");
+      } else {
+        box.innerHTML = list.map(function (b) {
+          return cardHtml(b, now, "");
+        }).join("");
+      }
     }
     renderQueueRail();
     startTicker();
@@ -917,7 +922,7 @@
     if (!panel) return;
     panel.innerHTML = state.ngos.map(function (n) {
       return '<article class="card ngo-card">' +
-        '<div class="card-header"><div class="card-title-group"><span class="card-icon">\uD83C\uDFE0</span>' +
+        '<div class="card-header"><div class="card-title-group"><span class="card-icon"><i data-lucide="utensils" aria-hidden="true"></i></span>' +
         '<div><h3 class="card-title">' + esc(n.name) + '</h3><p class="card-subtitle">' + esc(n.locality) + "</p></div>" +
         "</div></div>" +
         '<div class="meta-grid">' +
@@ -943,6 +948,44 @@
     return true;
   }
 
+  // Header search + locality filter. Empty state.searchQuery / state.localityFilter = no restriction.
+  function filtersActive() {
+    return !!(state.searchQuery || state.localityFilter);
+  }
+
+  function matchesFilters(b) {
+    if (!b) return false;
+    var q = String(state.searchQuery || "").toLowerCase();
+    if (q) {
+      var cat = b.caterer && typeof b.caterer === "object" ? (b.caterer.name || "") : b.caterer;
+      var fields = [b.id, b.food, cat, b.locality, b.status];
+      var hit = fields.some(function (f) {
+        return String(f || "").toLowerCase().indexOf(q) !== -1;
+      });
+      if (!hit) return false;
+    }
+    if (state.localityFilter && b.locality !== state.localityFilter) return false;
+    return true;
+  }
+
+  // Empty-list markup: a filter-specific message when a filter is active, otherwise the original message.
+  function emptyHtml(fallback) {
+    return filtersActive()
+      ? '<p class="empty-state">No matching batches found</p>'
+      : '<p class="empty">' + fallback + "</p>";
+  }
+
+  function populateHeaderLocality() {
+    var sel = $("header-locality-select");
+    if (!sel) return;
+    var names = ["Madhapur", "Gachibowli", "Kondapur", "Jubilee Hills"];
+    if (names.indexOf(state.localityFilter) === -1) state.localityFilter = "";
+    sel.innerHTML = '<option value="">All localities</option>' + names.map(function (n) {
+      return '<option value="' + esc(n) + '">' + esc(n) + "</option>";
+    }).join("");
+    sel.value = state.localityFilter;
+  }
+
   // Pill state for #dispatch-filters: one active button, aria-pressed mirrors it.
   function syncDispatchFilterButtons() {
     var bar = $("dispatch-filters");
@@ -961,17 +1004,23 @@
     $("feed-msg").textContent = state.feedMsg;
     syncDispatchFilterButtons();
 
-    var posted = state.batches.filter(function (b) { return b.status === "Posted" && passesDispatchFilter(b, now); })
+    var posted = state.batches.filter(function (b) { return b.status === "Posted" && passesDispatchFilter(b, now) && matchesFilters(b); })
       .sort(function (a, b) { return a.expiresAt - b.expiresAt; });
-    $("feed-posted").innerHTML = posted.length ? posted.map(function (b) {
-      return cardHtml(b, now, feedActionsHtml(b));
-    }).join("") : '<p class="empty">No open batches right now.</p>';
+    var postedBox = $("feed-posted");
+    if (postedBox) {
+      postedBox.innerHTML = posted.length ? posted.map(function (b) {
+        return cardHtml(b, now, feedActionsHtml(b));
+      }).join("") : emptyHtml("No open batches right now.");
+    }
 
-    var active = state.batches.filter(function (b) { return b.status !== "Posted" && passesDispatchFilter(b, now); })
+    var active = state.batches.filter(function (b) { return b.status !== "Posted" && passesDispatchFilter(b, now) && matchesFilters(b); })
       .sort(function (a, b) { return b.preparedAt - a.preparedAt; });
-    $("feed-active").innerHTML = active.length ? active.map(function (b) {
-      return cardHtml(b, now, feedActionsHtml(b));
-    }).join("") : '<p class="empty">No active rescues yet.</p>';
+    var activeBox = $("feed-active");
+    if (activeBox) {
+      activeBox.innerHTML = active.length ? active.map(function (b) {
+        return cardHtml(b, now, feedActionsHtml(b));
+      }).join("") : emptyHtml("No active rescues yet.");
+    }
     renderQueueRail();
     startTicker();
   }
@@ -983,10 +1032,10 @@
     if (!list) return;
     var now = Date.now();
     var active = state.batches.filter(function (b) {
-      return b.status !== "Delivered" && b.status !== "Expired";
+      return b.status !== "Delivered" && b.status !== "Expired" && matchesFilters(b);
     }).sort(function (a, b) { return (a.expiresAt - now) - (b.expiresAt - now); });
     if (!active.length) {
-      list.innerHTML = '<p class="empty">No active batches</p>';
+      list.innerHTML = emptyHtml("No active batches");
       return;
     }
     list.innerHTML = active.map(function (b) {
@@ -1586,6 +1635,7 @@
     renderPulse();
     renderHeroStats();
     renderBusinessModel();
+    if (window.lucide) lucide.createIcons();
   }
 
   function setView(view) {
@@ -1602,6 +1652,7 @@
       if (panel) panel.classList.toggle("active", v === view);
     });
     renderers[view]();
+    if (window.lucide) lucide.createIcons();
   }
 
   document.addEventListener("click", function (e) {
@@ -1678,6 +1729,22 @@
     renderCatererList();
   });
 
+  // Header search (live) and locality filter (on change). Both re-render every view.
+  var headerSearch = $("header-search-input");
+  if (headerSearch) {
+    headerSearch.addEventListener("input", function (e) {
+      state.searchQuery = String((e.target && e.target.value) || "").trim();
+      renderAll();
+    });
+  }
+  var headerLocality = $("header-locality-select");
+  if (headerLocality) {
+    headerLocality.addEventListener("change", function (e) {
+      state.localityFilter = (e.target && e.target.value) || "";
+      renderAll();
+    });
+  }
+
   // ROI slider listeners are attached in initRoiTab() (called from init below).
 
   var resetBtn = $("reset-demo-btn");
@@ -1714,6 +1781,7 @@
   renderDonateWidgets();
   takeSeedSnapshot();
   populateCatererFilter();
+  populateHeaderLocality();
   initRoiTab();
   renderAll();
 
