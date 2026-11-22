@@ -1757,4 +1757,116 @@ table.ledger-table:has(#ledger-events-body) tbody tr:hover td { background: #ECF
 .is-on { position: relative; z-index: 1501; }
 @media (max-width: 640px) { .tour-card { bottom: 12px; } }
 
+/* ===== v16 simulation dock, activity log, SLA alerts ===== */
+.sim-dock { display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap; background:#F8FAFC; border:1px solid #E2E8F0; border-radius:999px; padding:4px 6px; }
+.sim-btn { height:32px; padding:0 10px; border-radius:999px; border:1px solid #CBD5E1; background:#FFFFFF; color:#0F172A; font:inherit; font-size:.78rem; font-weight:600; display:inline-flex; align-items:center; gap:6px; cursor:pointer; }
+.sim-btn:hover { background:#F8FAFC; border-color:#059669; }
+.sim-play { background:#059669; border-color:#059669; color:#FFFFFF; }
+.sim-play:hover { background:#047857; }
+.sim-play[aria-pressed="true"] { background:#F97316; border-color:#F97316; }
+.sim-reset { color:#475569; }
+.sim-speed { display:inline-flex; border:1px solid #CBD5E1; border-radius:999px; overflow:hidden; background:#FFFFFF; }
+.sim-speed-btn { height:30px; padding:0 10px; border:0; background:transparent; font:inherit; font-size:.76rem; font-weight:700; color:#475569; cursor:pointer; }
+.sim-speed-btn.is-active { background:#ECFDF5; color:#065F46; }
+.sim-scenario-label { font-size:.72rem; color:#64748B; font-weight:600; }
+.sim-scenario { height:32px; border:1px solid #CBD5E1; border-radius:999px; padding:0 10px; background:#FFFFFF; font:inherit; font-size:.78rem; max-width:200px; }
+.sim-clock { font-size:.74rem; color:#475569; font-variant-numeric:tabular-nums; padding:0 6px; }
+.sim-activity { margin:0 0 14px; background:#FFFFFF; border:1px solid #E2E8F0; border-radius:14px; padding:10px 14px; }
+.sim-activity summary { cursor:pointer; font-weight:700; color:#0F172A; font-size:.9rem; display:flex; align-items:center; gap:8px; }
+.sim-activity-count { background:#E2E8F0; color:#334155; border-radius:999px; padding:0 8px; font-size:.72rem; font-variant-numeric:tabular-nums; }
+.sim-activity-list { margin:10px 0 0; padding:0; list-style:none; display:grid; gap:6px; max-height:220px; overflow-y:auto; }
+.sim-activity-list li { font-size:.8rem; color:#334155; display:grid; grid-template-columns:auto minmax(0,1fr); gap:8px; }
+.sim-time { font-variant-numeric:tabular-nums; color:#64748B; font-size:.72rem; }
+.sim-ticket { background:none; border:0; padding:0; font:inherit; font-weight:700; color:#065F46; cursor:pointer; text-decoration:underline; text-underline-offset:2px; }
+.sim-ticket:focus-visible { outline:2px solid #2563EB; outline-offset:2px; }
+.sim-sla-alerts { display:grid; gap:8px; margin-bottom:14px; }
+.sim-sla-alerts:empty { display:none; }
+.sim-sla { display:flex; align-items:center; gap:8px; background:#FFF7ED; border:1px solid #FDBA74; color:#9A3412; border-radius:12px; padding:8px 12px; font-size:.82rem; font-weight:600; }
+.sim-sla.is-escalated { background:#FEF2F2; border-color:#FCA5A5; color:#991B1B; }
+.card.sim-focus { box-shadow:0 0 0 3px #2563EB; transition:box-shadow .3s ease; }
+@media (max-width:1024px) { .sim-dock { width:100%; border-radius:14px; } .sim-clock { display:none; } }
+@media (max-width:640px) { .sim-scenario-label { display:none; } .sim-scenario { max-width:none; flex:1 1 140px; } }
+
+/* ===== v17 mobile header, toolbar and sim dock (<768px) ===== */
+.sim-dock, .sim-speed, .sim-btn, .sim-scenario { box-sizing: border-box; }
+@media (max-width: 767px) {
+  .app-header { display: grid; grid-template-columns: minmax(0,1fr); gap: 10px; padding: 12px 14px; }
+  .app-header .brand { min-width: 0; }
+  .app-header h1 { font-size: 1.15rem; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .app-header .brand p, .app-header .brand small { white-space: normal; font-size: .78rem; }
+  #city-status-pill { justify-self: start; white-space: nowrap; font-size: .74rem; }
+  .header-controls { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; width: 100%; }
+  #header-search-input { grid-column: 1 / -1; }
+  #header-locality-select, #role-select, #whatsapp-toggle, #btn-guided-demo { height: 40px; min-width: 0; width: 100%; white-space: nowrap; box-sizing: border-box; }
+  #header-search-input { height: 40px; min-width: 0; width: 100%; box-sizing: border-box; }
+  .role-switcher { display: contents; }
+  .role-label { display: none; }
+  #whatsapp-toggle, #btn-guided-demo { font-size: .8rem; justify-content: center; overflow: hidden; }
+  #whatsapp-toggle span:not(.whatsapp-badge) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sim-dock { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; width: 100%; border-radius: 14px; padding: 8px; overflow: hidden; }
+  .sim-speed { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); width: 100%; grid-column: span 1; }
+  .sim-speed-btn { min-width: 0; height: 36px; }
+  .sim-btn { height: 36px; min-width: 0; justify-content: center; }
+  .sim-btn-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sim-scenario-label { display: none; }
+  #sim-clock { display: none; }
+  #sim-scenario { grid-column: span 2; min-width: 0; width: 100%; max-width: none; height: 36px; }
+  #sim-reset { height: 36px; justify-content: center; white-space: nowrap; }
+  .side-nav { display: flex; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; scrollbar-width: none; padding: 10px 16px 10px 14px; gap: 8px; scroll-padding-right: 16px; }
+  .side-nav::-webkit-scrollbar { display: none; }
+  .side-nav .nav-item { flex: 0 0 auto; white-space: nowrap; }
+  .side-nav::after { content: ""; flex: 0 0 12px; }
+}
+/* ===== end v17 ===== */
+
+/* ===== v18 mobile header grid (<768px), resets v13-v17 placements ===== */
+@media (max-width: 767px) {
+  .app-header { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); grid-template-rows: auto; gap: 8px; padding: 12px 14px; align-items: center; box-sizing: border-box; width: 100%; }
+  .app-header > * { min-width: 0; box-sizing: border-box; }
+  .app-header .brand { grid-column: 1 / -1; grid-row: auto; display: flex; flex-wrap: nowrap; align-items: center; gap: 10px; }
+  .app-header .brand h1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  #city-status-pill { grid-column: 1 / -1; grid-row: auto; justify-self: start; white-space: nowrap; }
+  .app-header .header-controls { display: contents; }
+  .app-header .role-switcher { display: contents; }
+  #header-search-input { grid-column: 1 / -1; grid-row: auto; width: 100%; height: 40px; min-width: 0; box-sizing: border-box; }
+  #header-locality-select { grid-column: 1; grid-row: auto; width: 100%; height: 40px; min-width: 0; box-sizing: border-box; white-space: nowrap; }
+  #role-select { grid-column: 2; grid-row: auto; width: 100%; height: 40px; min-width: 0; box-sizing: border-box; white-space: nowrap; }
+  #whatsapp-toggle { grid-column: 1; grid-row: auto; width: 100%; height: 40px; min-width: 0; box-sizing: border-box; white-space: nowrap; justify-content: center; }
+  #btn-guided-demo { grid-column: 2; grid-row: auto; width: 100%; height: 40px; min-width: 0; box-sizing: border-box; white-space: nowrap; justify-content: center; }
+  .app-header #sim-dock.sim-dock { grid-column: 1 / -1; grid-row: auto; display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; width: 100%; padding: 8px; box-sizing: border-box; overflow: visible; }
+  .sim-dock .sim-speed { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); width: 100%; min-width: 0; }
+  .sim-dock .sim-btn, .sim-dock .sim-speed-btn { min-width: 0; height: 36px; justify-content: center; box-sizing: border-box; }
+  .sim-dock .sim-btn-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sim-dock .sim-scenario-label, .sim-dock #sim-clock { display: none; }
+  .sim-dock #sim-scenario { grid-column: span 2; width: 100%; min-width: 0; max-width: none; height: 36px; box-sizing: border-box; }
+  .sim-dock #sim-reset { height: 36px; width: 100%; min-width: 0; justify-content: center; white-space: nowrap; box-sizing: border-box; }
+  .persona-banner[hidden] { display: none !important; }
+}
+
+
+/* ===== v19 mobile header override and csr-row wrapping ===== */
+@media (max-width: 767px) {
+  .app-header { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 8px !important; padding: 12px 14px !important; align-items: center; box-sizing: border-box; }
+  .app-header > .brand { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .app-header > .brand > div, .app-header > .brand h1, .app-header > .brand p { flex: 1 1 auto; min-width: 0; }
+  .app-header > .brand p { white-space: normal; }
+  .app-header #city-status-pill { grid-column: 1 / -1; justify-self: start; margin-left: 0; }
+  .app-header #header-search-input { grid-column: 1 / -1; width: 100%; min-width: 0; height: 40px; box-sizing: border-box; }
+  .app-header .header-controls { display: contents; }
+  .app-header #header-locality-select { grid-column: span 1; width: 100%; min-width: 0; height: 40px; box-sizing: border-box; }
+  .app-header .role-switcher { display: contents; }
+  .app-header .role-label { display: none; }
+  .app-header #role-select { grid-column: span 1; width: 100%; min-width: 0; height: 40px; box-sizing: border-box; }
+  .app-header #whatsapp-toggle { grid-column: span 1; width: 100%; min-width: 0; height: 40px; white-space: nowrap; font-size: .8rem; justify-content: center; box-sizing: border-box; }
+  .app-header #btn-guided-demo { grid-column: span 1; width: 100%; min-width: 0; height: 40px; white-space: nowrap; font-size: .8rem; justify-content: center; box-sizing: border-box; }
+  .app-header #sim-dock.sim-dock { grid-column: 1 / -1; display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; width: 100%; border-radius: 14px; padding: 8px; box-sizing: border-box; }
+  .app-header #sim-dock #sim-scenario { grid-column: span 2; width: 100%; max-width: none; min-width: 0; height: 36px; box-sizing: border-box; }
+  .app-header #sim-dock #sim-reset { width: 100%; min-width: 0; height: 36px; justify-content: center; box-sizing: border-box; }
+  #csr-console .csr-row { min-width: 0; flex-wrap: wrap; }
+  #csr-console .csr-row > * { min-width: 0; }
+  #csr-console .csr-row > div:first-child, #csr-console .csr-row > span:first-child { flex: 1 1 180px; min-width: 0; overflow-wrap: anywhere; }
+  #csr-console .sponsor-badge { min-height: 44px; min-width: 44px; position: relative; z-index: 1; touch-action: manipulation; }
+}
+/* ===== end v19 ===== */
+
 

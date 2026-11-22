@@ -36,6 +36,20 @@
 
       <div class="role-switcher"><label for="role-select" class="role-label">Logged in as</label><select id="role-select" class="role-select" aria-label="Logged in as"><option value="">Select role</option><option value="ramesh">Ramesh K. (Deccan Royal Caterers)</option><option value="meera">Meera S. (Annapurna Seva NGO)</option><option value="arjun">Arjun V. (EV Rider R-07)</option><option value="vikram">Vikram R. (TechPark CSR Sponsor)</option></select></div>
       <button id="btn-guided-demo" class="btn btn-secondary guided-demo-btn" type="button" data-action="tour-start" aria-label="Start 60-second guided demo"><i data-lucide="play" aria-hidden="true"></i><span>Guided Demo</span></button>
+      <div id="sim-dock" class="sim-dock" role="region" aria-label="Simulation controls">
+        <button type="button" id="sim-toggle" class="sim-btn sim-play" data-action="sim-toggle" aria-pressed="false" aria-label="Play simulation"><i data-lucide="play" aria-hidden="true"></i><span class="sim-btn-label">Play</span></button>
+        <button type="button" id="sim-step" class="sim-btn" data-action="sim-step" aria-label="Step one tick"><i data-lucide="step-forward" aria-hidden="true"></i><span class="sim-btn-label">+1 tick</span></button>
+        <div class="sim-speed" role="group" aria-label="Simulation speed">
+          <button type="button" class="sim-speed-btn is-active" data-action="sim-speed" data-speed="1" aria-pressed="true">1x</button>
+          <button type="button" class="sim-speed-btn" data-action="sim-speed" data-speed="3" aria-pressed="false">3x</button>
+          <button type="button" class="sim-speed-btn" data-action="sim-speed" data-speed="10" aria-pressed="false">10x</button>
+        </div>
+        <label class="sim-scenario-label" for="sim-scenario">Scenario</label>
+        <select id="sim-scenario" class="sim-scenario" data-action="sim-scenario"><option value="normal">Normal Operations</option><option value="rush">Peak Rush Hour</option><option value="incident">Incident and Reroute</option></select>
+        <button type="button" id="sim-reset" class="sim-btn sim-reset" data-action="sim-reset"><i data-lucide="rotate-ccw" aria-hidden="true"></i><span class="sim-btn-label">Reset demo</span></button>
+        <span id="sim-clock" class="sim-clock" aria-live="off">Tick 0</span>
+      </div>
+
 
     </header>
 
@@ -252,6 +266,9 @@
         <button type="button" class="filter-pill" data-filter="transit" aria-pressed="false">In Transit</button>
         <button type="button" class="filter-pill" data-filter="delivered" aria-pressed="false">Delivered</button>
       </div>
+      <details id="sim-activity" class="sim-activity" open><summary>Live activity <span id="sim-activity-count" class="sim-activity-count">0</span></summary><ol id="sim-activity-list" class="sim-activity-list"></ol></details>
+      <div id="sim-sla-alerts" class="sim-sla-alerts" aria-live="polite"></div>
+
       <div class="grid-2">
         <section class="panel">
           <h2>Live feed: open Posted batches</h2>

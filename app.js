@@ -17,7 +17,7 @@
   var TIER2_PER_RESCUE_INR = 40;
   var STAGES = ["Posted", "Claimed", "Collected", "Delivered"];
   // localStorage key for the persisted demo database (batches, ngos, nextNum, activeRole).
-  var DB_KEY = "annasetu_db_v1";
+  var DB_KEY = "annasetu_db_v2";
   // Single shared locality list: header filter and impact locality bars.
   var LOCALITY_LIST = ["Madhapur", "Gachibowli", "Kondapur", "Jubilee Hills", "Hitech City", "Banjara Hills"];
   // Synthetic persona -> landing view and optional dispatch filter (Arjun = active pickups = "transit").
@@ -68,7 +68,10 @@
     radarSelected: null,
     // Draft choices for the donate form. kg/meals are read from the slider on each change.
     donate: { foodChoice: "", customFood: "", diet: "", kg: 20, meals: 50, windowHours: null,
-      cookedHoursAgo: null, storage: "", allergens: [], packaging: "" }
+      cookedHoursAgo: null, storage: "", allergens: [], packaging: "" },
+    // Real-time dispatch simulation. Session only: never saved (saveDb strips sim* batch keys).
+    sim: { running: false, speed: 1, tick: 0, scenario: "normal", timer: null, log: [], nextSpawnAt: 0,
+      scenarioStartTick: 0, escalations: [], riders: {}, warned: {}, incidentId: null, incidentClearAt: 0 }
   };
 
   var tickerId = null;
@@ -336,7 +339,8 @@
   // Posted -> Claimed (Smart Match): top-ranked NGO with room for the whole batch.
   function claimBatch(id) {
     var b = findBatch(id);
-    if (!b || b.locked || b.status !== "Posted") return;
+    if (!b) return;
+    if (b.locked || b.status !== "Posted") { b.dispatchNote = b.id + " is no longer open (" + b.status + ")."; return; }
     var ranked = rankNgos(state.ngos, { diet: b.diet, meals: b.servings }).filter(function (m) {
       return remaining(m.ngo) >= b.servings;
     });
@@ -865,8 +869,9 @@
     }
 
     var loc = D.LOCALITIES[locality];
-    var id = "AS-" + state.nextNum;
-    state.nextNum += 1;
+    var num = nextFreeBatchNum(state.batches);
+    var id = "AS-" + num;
+    state.nextNum = num + 1;
 
     state.batches.push({
       id: id,
@@ -1173,7 +1178,8 @@
         esc(b.expiresAt) + '">' + esc(formatCountdown(left)) + "</span>";
     }
     var storage = b.storage ? " \u2022 " + esc(b.storage) : "";
-    var html = '<article class="card batch-card' + (urgent ? " urgent" : "") + '" data-status="' + esc(b.status) + '">';
+    var html = '<article class="card batch-card' + (urgent ? " urgent" : "") + '" data-id="' + esc(b.id) +
+      '" data-status="' + esc(b.status) + '">';
     html += '<div class="card-header"><div class="card-title-group"><span class="card-icon ' +
       (isVeg ? "veg" : "nonveg") + '">' + icon + "</span>" +
       '<div><h3 class="card-title">' + esc(b.food) + '</h3><p class="card-subtitle">' + esc(b.id) + "</p></div>" +
@@ -2025,8 +2031,16 @@
   function saveDb() {
     try {
       if (!window.localStorage) return false;
+      // Session-only sim* keys (simProgress, simSla, ...) are stripped from every batch copy.
+      var savedBatches = state.batches.map(function (b) {
+        var copy = {};
+        Object.keys(b).forEach(function (k) {
+          if (k.indexOf("sim") !== 0) copy[k] = b[k];
+        });
+        return copy;
+      });
       window.localStorage.setItem(DB_KEY, JSON.stringify({
-        batches: state.batches,
+        batches: savedBatches,
         ngos: state.ngos,
         nextNum: state.nextNum,
         activeRole: state.activeRole,
@@ -2079,6 +2093,25 @@
     return out;
   }
 
+  // Returns the next free batch number: one past the largest numeric AS-n suffix in batches,
+  // then skips any AS-n id that already exists. Non-array input is treated as [].
+  function nextFreeBatchNum(batches) {
+    var list = Array.isArray(batches) ? batches : [];
+    var ids = {};
+    var max = 0;
+    list.forEach(function (b) {
+      var id = b && typeof b.id === "string" ? b.id : "";
+      var m = /^AS-(\d+)$/.exec(id);
+      if (!m) return;
+      ids[id] = true;
+      var n = parseInt(m[1], 10);
+      if (n > max) max = n;
+    });
+    var next = max + 1;
+    while (ids["AS-" + next]) next += 1;
+    return next;
+  }
+
   // Restores saved fields into state. Keeps seed defaults for anything missing or invalid.
   // All batch timestamps are numeric milliseconds (no Date objects), so JSON round-trips them.
   function loadDb() {
@@ -2116,6 +2149,7 @@
     if (typeof saved.activeRole === "string" && ROLE_VIEWS.hasOwnProperty(saved.activeRole)) {
       state.activeRole = saved.activeRole;
     }
+    state.nextNum = Math.max(Number(state.nextNum) || 0, nextFreeBatchNum(state.batches));
     return true;
   }
 
@@ -2254,12 +2288,25 @@
     }, SIM_STEP_MS);
   }
 
+  // A pre-existing open batch is reused only if it is still dispatchable for the demo.
+  function isReusableDemoBatch(b, now) {
+    if (!b || b.status !== "Posted" || b.locked) return false;
+    if (!(b.expiresAt - now > 10 * MIN)) return false;
+    var servings = Number(b.servings);
+    if (!isFinite(servings) || servings <= 0) return false;
+    return rankNgos(state.ngos, { diet: b.diet, meals: servings }).some(function (m) {
+      return remaining(m.ngo) >= servings;
+    });
+  }
+
   function onSimulateRescue() {
     if (simRunning) return;
     var btn = $("btn-simulate-rescue");
     var batch = null;
     try {
-      batch = findOpenPostedBatch(Date.now()) || createDemoBatch();
+      var now = Date.now();
+      batch = findOpenPostedBatch(now);
+      if (!batch || !isReusableDemoBatch(batch, now)) batch = createDemoBatch();
     } catch (err) {
       batch = null;
     }
@@ -2271,6 +2318,406 @@
     if (btn) btn.disabled = true;
     try { setView("feed"); } catch (err) { /* the view switch is cosmetic */ }
     runSimulationStep(batch.id, 1, btn);
+  }
+
+  // ---------- real-time dispatch simulation (demo only; session state in state.sim, never saved) ----------
+  var SIM_SPEEDS = [1, 3, 10];
+  var SIM_BASE_TICK_MS = 2000;
+  var SIM_SPAWN_EVERY = { normal: 6, rush: 2, incident: 5 };
+  var SIM_PROGRESS_P = { normal: 0.5, rush: 0.6, incident: 0.5 };
+  // Caterer names copied from the seed list in data.js (buildSeedBatches).
+  var SIM_CATERERS = [
+    "Deccan Royal Caterers", "Saffron Feast Events", "Lakeview Wedding Kitchens", "Kondapur Celebrations Co.",
+    "Banjara Banquet Caterers", "Hitech Corporate Kitchens", "Royal Nizam Banquets",
+    "Gachibowli TechPark Events", "Vanguard Wedding Caterers", "Kondapur Family Caterers"
+  ];
+  var SIM_INCIDENT_TEXT = "Rider delay: breakdown reported";
+  var simFocusTimer = null;
+
+  function simRandInt(min, max) {
+    return min + Math.floor(Math.random() * (max - min + 1));
+  }
+
+  function simLog(kind, text, ticketId) {
+    state.sim.log.unshift({
+      at: Date.now(),
+      kind: String(kind || ""),
+      text: String(text || ""),
+      ticketId: ticketId ? String(ticketId) : ""
+    });
+    if (state.sim.log.length > 80) state.sim.log.length = 80;
+  }
+
+  // ----- clock -----
+  function simSyncToggle() {
+    var btn = $("sim-toggle");
+    if (!btn) return;
+    var on = state.sim.running;
+    var label = btn.querySelector(".sim-btn-label");
+    if (label) label.textContent = on ? "Pause" : "Play";
+    btn.setAttribute("aria-pressed", on ? "true" : "false");
+    btn.setAttribute("aria-label", on ? "Pause simulation" : "Play simulation");
+  }
+
+  function simSetSpeedButtons() {
+    var n = String(state.sim.speed);
+    Array.prototype.forEach.call(document.querySelectorAll(".sim-speed-btn"), function (btn) {
+      var on = btn.getAttribute("data-speed") === n;
+      btn.classList.toggle("is-active", on);
+      btn.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+
+  function simSchedule() {
+    clearTimeout(state.sim.timer);
+    state.sim.timer = setTimeout(simTick, SIM_BASE_TICK_MS / state.sim.speed);
+  }
+
+  function simStart() {
+    if (state.sim.running) return;
+    state.sim.running = true;
+    simSyncToggle();
+    simSchedule();
+  }
+
+  function simStop() {
+    state.sim.running = false;
+    clearTimeout(state.sim.timer);
+    state.sim.timer = null;
+    simSyncToggle();
+  }
+
+  function simTick() {
+    state.sim.timer = null;
+    if (!state.sim.running) return;
+    simAdvance();
+    if (state.sim.running) simSchedule();
+  }
+
+  function simStep() {
+    if (state.sim.running) return;
+    simAdvance();
+  }
+
+  function simSetSpeed(n) {
+    if (SIM_SPEEDS.indexOf(n) === -1) return;
+    state.sim.speed = n;
+    if (state.sim.running) simSchedule();
+    simSetSpeedButtons();
+    renderSimStatus();
+  }
+
+  // One simulation tick: spawn, progress, telemetry, SLA, then re-render.
+  function simAdvance() {
+    var sim = state.sim;
+    sim.tick += 1;
+    if (sim.tick >= sim.nextSpawnAt) {
+      simSpawnTicket();
+      sim.nextSpawnAt = sim.tick + (SIM_SPAWN_EVERY[sim.scenario] || 6);
+    }
+    simIncidentStep();
+    simProgress();
+    simTelemetry(Date.now());
+    simCheckSla(Date.now());
+    renderAll();
+    renderSimStatus();
+    renderSimLog();
+  }
+
+  // ----- spawner -----
+  // Builds a Posted batch in the same shape as the donate path. Rush: every second ticket is High.
+  function simSpawnTicket() {
+    var sim = state.sim;
+    var now = Date.now();
+    var localities = Object.keys(D.LOCALITIES || {});
+    var presets = (D.FOOD_PRESETS || []).filter(function (f) { return f !== "Custom"; });
+    if (!localities.length || !presets.length) return null;
+    var num = nextFreeBatchNum(state.batches);
+    var id = "AS-" + num;
+    state.nextNum = num + 1;
+    var expiryMin;
+    if (sim.scenario === "rush") {
+      expiryMin = state.nextNum % 2 === 0 ? simRandInt(25, 40) : simRandInt(46, 60);
+    } else {
+      expiryMin = simRandInt(30, 120);
+    }
+    var loc = localities[simRandInt(0, localities.length - 1)];
+    var coords = D.LOCALITIES[loc];
+    var kg = simRandInt(25, 60);
+    var expiresAt = now + expiryMin * MIN;
+    var priority = expiresAt - now < URGENT_MIN * MIN ? "High" : "Normal";
+    var batch = {
+      id: id,
+      caterer: SIM_CATERERS[simRandInt(0, SIM_CATERERS.length - 1)],
+      locality: loc,
+      lat: coords.lat,
+      lng: coords.lng,
+      food: presets[simRandInt(0, presets.length - 1)],
+      diet: Math.random() < 0.5 ? "Veg" : "Non-Veg",
+      servings: Math.round(kg / MEAL_KG),
+      kg: kg,
+      preparedAt: now,
+      expiresAt: expiresAt,
+      ngoId: null,
+      rider: null,
+      claimedAt: null,
+      status: "Posted",
+      storage: "Hot-held",
+      allergens: [],
+      packaging: "Sealed Foil Trays",
+      priority: priority,
+      events: [{ type: "Posted", at: now }]
+    };
+    state.batches.push(batch);
+    queuePostedAlerts(batch);
+    simLog("ticket", "New ticket posted at " + loc + " (" + priority.toUpperCase() + ")", id);
+    if (priority === "High") showToast("New high-priority ticket", id, "warn");
+    else showToast("New ticket", id);
+    return batch;
+  }
+
+  // ----- progression: existing transition functions only -----
+  function simProgress() {
+    var p = SIM_PROGRESS_P[state.sim.scenario] || 0.5;
+    state.batches.slice().forEach(function (b) {
+      if (b.locked || !isOpenStatus(b) || Math.random() >= p) return;
+      try {
+        if (b.status === "Posted") {
+          var fits = rankNgos(state.ngos, { diet: b.diet, meals: b.servings }).some(function (m) {
+            return remaining(m.ngo) >= b.servings;
+          });
+          if (!fits) return;
+          claimBatch(b.id);
+          if (b.status !== "Claimed") {
+            simLog("warning", "Claim did not change " + b.id, b.id);
+            return;
+          }
+          queueClaimedAlerts(b);
+          simLog("claim", b.id + " claimed by " + b.rider + " for " + ngoNameOf(b), b.id);
+        } else if (b.status === "Claimed") {
+          b.tempChecked = true;
+          confirmPickup(b.id);
+          if (b.status !== "Collected") {
+            simLog("warning", "Pickup did not change " + b.id, b.id);
+            return;
+          }
+          simLog("pickup", b.id + " collected by " + b.rider, b.id);
+        } else if (b.status === "Collected") {
+          confirmDelivery(b.id);
+          if (b.status !== "Delivered") {
+            simLog("warning", "Delivery did not change " + b.id, b.id);
+            return;
+          }
+          simLog("delivery", b.id + " delivered to " + ngoNameOf(b), b.id);
+        }
+      } catch (err) {
+        simLog("error", "Transition failed on " + b.id + ": " + (err && err.message ? err.message : String(err)), b.id);
+      }
+    });
+  }
+
+  // Movement and rider battery for Claimed and Collected batches (display only).
+  function simTelemetry(now) {
+    state.batches.forEach(function (b) {
+      var ngo = (b.status === "Claimed" || b.status === "Collected") && b.ngoId ? ngoById(b.ngoId) : null;
+      if (!ngo) {
+        delete b.simProgress;
+        delete b.simDistanceLeftKm;
+        delete b.simEtaMin;
+        return;
+      }
+      var etaMinutes = etaFor(ngo);
+      var start = b.status === "Claimed" ? (b.claimedAt || b.preparedAt) : (b.collectedAt || b.preparedAt);
+      var p = Math.min(1, Math.max(0, (now - start) / (etaMinutes * MIN)));
+      b.simProgress = p;
+      b.simDistanceLeftKm = Math.round((1 - p) * Number(ngo.distance_km) * 10) / 10;
+      b.simEtaMin = Math.max(0, Math.round((1 - p) * etaMinutes));
+      if (b.rider) {
+        state.sim.riders[b.rider] = Math.max(15, 100 - (Math.round(state.sim.tick * 0.4) % 85));
+      }
+    });
+  }
+
+  // SLA: risk at 15 min or less, breach (escalated to the CSR console) at 5 min or less. Warn once per id.
+  function simCheckSla(now) {
+    var sim = state.sim;
+    state.batches.forEach(function (b) {
+      if (!isOpenStatus(b) || b.locked) {
+        delete b.simSla;
+        return;
+      }
+      var minutes = Math.max(0, Math.round((b.expiresAt - now) / MIN));
+      if (minutes <= 5) {
+        b.simSla = "breach";
+        if (!sim.warned[b.id + ":breach"]) {
+          sim.warned[b.id + ":breach"] = true;
+          sim.escalations.push({ id: b.id, locality: b.locality, minutes: minutes });
+          if (sim.escalations.length > 20) sim.escalations.splice(0, sim.escalations.length - 20);
+          simLog("sla", "SLA breach on " + b.id + ", escalated to CSR console", b.id);
+          showToast("SLA breach", b.id + " escalated to CSR console", "error");
+        }
+      } else if (minutes <= 15) {
+        b.simSla = "risk";
+        if (!sim.warned[b.id + ":risk"]) {
+          sim.warned[b.id + ":risk"] = true;
+          simLog("sla", "SLA risk on " + b.id + ": " + minutes + " min left", b.id);
+          showToast("SLA risk", b.id + " has " + minutes + " min left", "warn");
+        }
+      } else if (!b.simIncident) {
+        delete b.simSla;
+      }
+    });
+  }
+
+  // ----- scenarios -----
+  function simSetScenario(name) {
+    if (["normal", "rush", "incident"].indexOf(name) === -1) return;
+    state.sim.scenario = name;
+    state.sim.scenarioStartTick = state.sim.tick;
+    state.sim.nextSpawnAt = state.sim.tick;
+    simLog("scenario", "Scenario set to " + name, "");
+    renderSimLog();
+    renderSimStatus();
+  }
+
+  // Incident run: one rider breakdown per run (4 ticks in), reassigned to another rider; flag clears 2 ticks later.
+  function simIncidentStep() {
+    var sim = state.sim;
+    if (sim.incidentId && sim.tick >= sim.incidentClearAt) {
+      var old = findBatch(sim.incidentId);
+      if (old) {
+        delete old.simIncident;
+        if (old.dispatchNote === SIM_INCIDENT_TEXT) old.dispatchNote = null;
+      }
+      sim.incidentId = null;
+    }
+    if (sim.scenario !== "incident" || sim.tick < sim.scenarioStartTick + 4 || sim.warned["incident:run"]) return;
+    var target = null;
+    for (var i = 0; i < state.batches.length; i++) {
+      var c = state.batches[i];
+      if (c.status === "Collected" && c.ngoId && !c.locked) { target = c; break; }
+    }
+    if (!target) return;
+    sim.warned["incident:run"] = true;
+    target.simIncident = SIM_INCIDENT_TEXT;
+    target.dispatchNote = SIM_INCIDENT_TEXT;
+    target.simSla = "risk";
+    simLog("incident", "Rider delay on " + target.id + ": breakdown reported", target.id);
+    showToast("Rider delay on " + target.id, "", "warn");
+    var next = null;
+    for (var j = 0; j < RIDERS.length; j++) {
+      if (RIDERS[j].name !== target.rider) { next = RIDERS[j]; break; }
+    }
+    if (next) {
+      var from = target.rider;
+      target.rider = next.name;
+      target.vehicle = next.vehicle;
+      simLog("reroute", "Reassigned " + target.id + " to " + next.name + (from ? " from " + from : ""), target.id);
+    }
+    sim.incidentId = target.id;
+    sim.incidentClearAt = sim.tick + 2;
+  }
+
+  // ----- reset and teardown -----
+  function simReset() {
+    simStop();
+    var sim = state.sim;
+    sim.log = [];
+    sim.warned = {};
+    sim.escalations = [];
+    sim.riders = {};
+    sim.tick = 0;
+    sim.scenarioStartTick = 0;
+    sim.nextSpawnAt = 0;
+    sim.incidentId = null;
+    sim.incidentClearAt = 0;
+    if (simFocusTimer !== null) {
+      clearTimeout(simFocusTimer);
+      simFocusTimer = null;
+    }
+    resetDemoData();
+    renderAll();
+    renderSimLog();
+    renderSimStatus();
+  }
+
+  function simDispose() {
+    clearTimeout(state.sim.timer);
+    state.sim.timer = null;
+  }
+
+  // ----- log, status and focus -----
+  function simTextHtml(entry) {
+    var text = entry.text;
+    if (!entry.ticketId) return esc(text);
+    var button = '<button type="button" class="sim-ticket" data-action="sim-focus" data-id="' +
+      esc(entry.ticketId) + '">' + esc(entry.ticketId) + "</button>";
+    var idx = text.indexOf(entry.ticketId);
+    if (idx === -1) return esc(text) + " " + button;
+    return esc(text.slice(0, idx)) + button + esc(text.slice(idx + entry.ticketId.length));
+  }
+
+  function renderSimLog() {
+    var list = $("sim-activity-list");
+    var count = $("sim-activity-count");
+    if (count) count.textContent = String(state.sim.log.length);
+    if (!list) return;
+    list.innerHTML = state.sim.log.map(function (entry) {
+      var t = new Date(entry.at);
+      var stamp = pad(t.getHours()) + ":" + pad(t.getMinutes()) + ":" + pad(t.getSeconds());
+      return '<li><time class="sim-time">' + esc(stamp) + "</time><span>" + simTextHtml(entry) + "</span></li>";
+    }).join("");
+  }
+
+  function renderSimStatus() {
+    var clock = $("sim-clock");
+    if (clock) clock.textContent = "Tick " + state.sim.tick + ", " + state.sim.speed + "x";
+    var host = $("sim-sla-alerts");
+    if (!host) return;
+    var rows = [];
+    state.batches.forEach(function (b) {
+      if (b.simSla === "breach") {
+        rows.push('<div class="sim-sla is-escalated">SLA breach on ' + esc(b.id) + ", escalated to CSR console</div>");
+      } else if (b.simSla === "risk") {
+        rows.push('<div class="sim-sla">SLA risk on ' + esc(b.id) + ": " +
+          esc(Math.max(0, Math.round(minsLeft(b, Date.now())))) + " min left</div>");
+      }
+    });
+    host.innerHTML = rows.join("");
+  }
+
+  // Scrolls the feed card for a batch into view and highlights it for 2 seconds.
+  function simFocusCard(id) {
+    var panel = $("view-feed");
+    if (!panel || !panel.classList.contains("active")) {
+      try { setView("feed"); } catch (err) { /* the view switch is cosmetic */ }
+    }
+    var target = null;
+    Array.prototype.forEach.call(document.querySelectorAll(".batch-card"), function (c) {
+      if (!target && c.getAttribute("data-id") === id) target = c;
+    });
+    if (!target) return;
+    Array.prototype.forEach.call(document.querySelectorAll(".sim-focus"), function (n) {
+      n.classList.remove("sim-focus");
+    });
+    target.classList.add("sim-focus");
+    if (simFocusTimer !== null) clearTimeout(simFocusTimer);
+    simFocusTimer = setTimeout(function () {
+      simFocusTimer = null;
+      target.classList.remove("sim-focus");
+    }, 2000);
+    try {
+      target.scrollIntoView({ block: "center", behavior: "smooth" });
+    } catch (err) { /* scrolling is cosmetic */ }
+  }
+
+  // ----- persona sync -----
+  function simRiderLines(b) {
+    if (typeof b.simProgress !== "number") return "";
+    var battery = state.sim.riders[b.rider];
+    return '<p class="hint">ETA ' + esc(b.simEtaMin) + " min</p>" +
+      '<p class="hint">' + esc(fmtNum(b.simDistanceLeftKm)) + " km left</p>" +
+      (typeof battery === "number" ? '<p class="hint">Battery ' + esc(battery) + "%</p>" : "");
   }
 
   // ---------- navigation & wiring ----------
@@ -2583,8 +3030,9 @@
     state.riderIdx += 1;
     var postedAt = eventAt(b, "Posted");
     var clone = JSON.parse(JSON.stringify(b));
-    var newId = "AS-" + state.nextNum;
-    state.nextNum += 1;
+    var num = nextFreeBatchNum(state.batches);
+    var newId = "AS-" + num;
+    state.nextNum = num + 1;
     clone.id = newId;
     clone.kg = half;
     clone.servings = newMeals;
@@ -2643,7 +3091,8 @@
   function setPanel(id, on, build) {
     var el = $(id);
     if (!el) return;
-    el.innerHTML = on ? build() : '<p class="hint">Select this persona in the header to open the workspace.</p>';
+    el.innerHTML = on ? build() : "";
+    el.hidden = !on;
   }
 
   function riderMissionHtml() {
@@ -2672,7 +3121,7 @@
           '">Confirm handover</button>') + "</div>";
       return '<article class="card rider-batch" data-id="' + esc(b.id) + '"><div class="card-header"><div>' +
         '<h3 class="card-title">' + esc(b.id) + '</h3><p class="card-subtitle">' + esc(b.food) + " \u00B7 " +
-        esc(b.rider) + "</p></div></div>" + step1 + step2 + step3 + "</article>";
+        esc(b.rider) + "</p>" + simRiderLines(b) + "</div></div>" + step1 + step2 + step3 + "</article>";
     }).join("");
   }
 
@@ -2700,7 +3149,14 @@
       return '<div class="csr-row"><span class="batch-id-pill">' + esc(b.id) + "</span> <span>" + esc(b.food) +
         " \u00B7 " + esc(m) + " meals \u00B7 cost per meal " + esc(cpm) + "</span> " + action + "</div>";
     }).join("");
-    return totals + (rows || '<p class="empty">No active batches to sponsor.</p>');
+    var escalated = "";
+    if (state.activeRole === "vikram" && state.sim.escalations.length) {
+      escalated = state.sim.escalations.map(function (e) {
+        return '<div class="sim-sla is-escalated">SLA breach on ' + esc(e.id) + " (" + esc(e.locality) + "), " +
+          esc(e.minutes) + " min left, escalated to CSR console</div>";
+      }).join("");
+    }
+    return totals + escalated + (rows || '<p class="empty">No active batches to sponsor.</p>');
   }
 
   function renderPersona() {
@@ -3439,8 +3895,9 @@
     setHidden(panelOf(liveHeading), isArjun);
     // Meera: rescues column hidden.
     setHidden(panelOf(rescueHeading), isMeera);
-    // rider-mission visibility for other roles is owned by renderPersona()/setPanel(), so only arjun is set here.
-    if (isArjun) setHidden($("rider-mission"), false);
+    // Persona panels: rider-mission only for arjun, csr-console only for vikram. Runs on every renderAll.
+    setHidden($("rider-mission"), role !== "arjun");
+    setHidden($("csr-console"), role !== "vikram");
 
     // NGO cards in #ngo-panel follow state.ngos order (renderNgoPanel). Meera keeps only the Annapurna card.
     if (ngoPanel) {
@@ -3770,6 +4227,18 @@
       }
       renderAll();
       saveDb();
+    } else if (action === "sim-toggle") {
+      if (state.sim.running) simStop();
+      else simStart();
+    } else if (action === "sim-step") {
+      simStep();
+    } else if (action === "sim-speed") {
+      simSetSpeed(Number(el.getAttribute("data-speed")));
+      simSetSpeedButtons();
+    } else if (action === "sim-reset") {
+      simReset();
+    } else if (action === "sim-focus") {
+      simFocusCard(id);
     } else if (action === "tour-start") {
       startTour();
     } else if (action === "tour-next") {
@@ -3938,7 +4407,19 @@
     if (state.tour.active && e.key === "Escape") exitTour();
   });
   updateWhatsAppBadge();
+  // Simulation: scenario select attached once; timers cleared on page hide.
+  var simScenarioSelect = $("sim-scenario");
+  if (simScenarioSelect) {
+    simScenarioSelect.addEventListener("change", function (e) {
+      simSetScenario(e.target.value);
+    });
+  }
+  window.addEventListener("pagehide", simDispose);
   renderAll();
+  simSyncToggle();
+  simSetSpeedButtons();
+  renderSimLog();
+  renderSimStatus();
 
   // Refresh urgency countdowns and live feed every 30 seconds.
   // Only non-form views are refreshed so typing in the donate form is not disrupted.
