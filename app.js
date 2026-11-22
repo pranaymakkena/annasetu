@@ -57,6 +57,8 @@
     activeRole: "",
     riderIdx: 0,
     dispatchFilter: "all",
+    // Guided demo tour. Session only: not written by saveDb().
+    tour: { active: false, step: 0 },
     // Manual NGO override choices per Posted batch id; kept across re-renders.
     overrides: {},
     // WhatsApp alert drawer: in memory only, deliberately not written by saveDb.
@@ -254,6 +256,42 @@
     });
     return eligible;
   }
+
+  // Smart Match breakdown for one Posted batch {diet, servings, storage, preparedAt, safeHours}.
+  // Candidates come from rankNgos (same filters). Four criteria, each 0-100:
+  // ETA 40, cold/hot storage 25, expiry urgency 20, dietary fit 15. Top 3 by overall, ties by distance.
+  // Does not change scoreNgo, matchFactors or rankNgos.
+  function matchBreakdown(batch) {
+    var ranked = rankNgos(state.ngos, { diet: batch.diet, meals: batch.servings });
+    if (!ranked.length) return [];
+    var now = Date.now();
+    var etas = ranked.map(function (m) { return Math.max(0, etaMinFor(m.ngo)); });
+    var fastest = Math.min.apply(null, etas);
+    var mins = safeMinsLeft(batch, now);
+    var expiryScore = mins >= 120 ? 100 : (mins < 15 ? 20 : Math.round(20 + 80 * (mins - 15) / 105));
+    var storageOk = batch.storage === "Room Temp";
+    var rows = ranked.map(function (m, i) {
+      var ngo = m.ngo;
+      var etaScore = fastest > 0 ? Math.max(0, Math.min(100, Math.round(100 * (2 - etas[i] / fastest)))) : 100;
+      var coldScore = (storageOk || ngo.coldStorage === true) ? 100 : 0;
+      var dietScore = dietOk(ngo.pref, batch.diet) ? 100 : 0;
+      var criteria = [
+        { label: "Proximity & Traffic ETA", weight: 40, score: etaScore },
+        { label: "Cold/Hot Storage Capacity", weight: 25, score: coldScore },
+        { label: "Expiry Window Urgency", weight: 20, score: expiryScore },
+        { label: "Dietary Fit", weight: 15, score: dietScore }
+      ];
+      var overall = Math.round(criteria.reduce(function (sum, c) { return sum + c.score * c.weight / 100; }, 0));
+      return { ngo: ngo, overall: overall, distance: Number(ngo.distance_km) || 0, criteria: criteria };
+    });
+    rows.sort(function (a, b) {
+      return b.overall - a.overall || a.distance - b.distance;
+    });
+    return rows.slice(0, 3).map(function (r) {
+      return { ngo: r.ngo, overall: r.overall, criteria: r.criteria };
+    });
+  }
+
 
   // ---------- actions ----------
   // Expiry lock: an open batch past its deadline becomes Expired and is never routed.
@@ -3473,6 +3511,171 @@
     lucide.createIcons();
   }
 
+  // Newest Posted batch (by preparedAt, later array entry wins a tie), or null.
+  function newestPostedBatch() {
+    var best = null;
+    state.batches.forEach(function (b) {
+      if (!b || b.status !== "Posted" || b.locked) return;
+      if (!best || Number(b.preparedAt) >= Number(best.preparedAt)) best = b;
+    });
+    return best;
+  }
+
+  // Caterer Portal: Top 3 NGO Match Breakdown for the newest Posted batch.
+  // Target #smart-match-breakdown; created before #match-preview when missing.
+  function renderMatchBreakdown() {
+    var host = $("smart-match-breakdown");
+    if (!host) {
+      var preview = $("match-preview");
+      if (!preview || !preview.parentNode) return;
+      host = document.createElement("div");
+      host.id = "smart-match-breakdown";
+      preview.parentNode.insertBefore(host, preview);
+    }
+    var target = newestPostedBatch();
+    var results = target ? matchBreakdown(target) : [];
+    if (!results.length) {
+      host.innerHTML = '<p class="empty-state">No NGO matches for this surplus yet.</p>';
+      return;
+    }
+    var cards = results.map(function (r, i) {
+      var rows = r.criteria.map(function (c) {
+        return '<div class="sm-row"><span>' + esc(c.label) + " (" + esc(c.weight) + "%)</span>" +
+          '<div class="sm-bar"><span style="width:' + esc(c.score) + '%"></span></div>' +
+          "<b>" + esc(c.score) + "</b></div>";
+      }).join("");
+      return '<article class="sm-card' + (i === 0 ? " is-top" : "") + '">' +
+        '<div class="sm-card-head"><span>' + esc(r.ngo.name) + '</span><strong class="sm-overall">' +
+        esc(r.overall) + "%</strong></div>" + rows + "</article>";
+    }).join("");
+    host.innerHTML = '<div class="sm-breakdown">' + cards + "</div>" +
+      '<div class="sm-actions"><button class="btn btn-primary" data-action="dispatch-top-match" data-id="' +
+      esc(target.id) + '">Dispatch to #1 Match</button></div>';
+  }
+
+  // ---------- guided demo tour ----------
+  var TOUR_STEPS = [
+    { view: "caterer", selector: "#btn-autofill-wedding", fallback: "#match-preview", title: "Caterer Portal", text: "Log surplus in one tap and see AI NGO matching." },
+    { view: "feed", selector: "#btn-simulate-rescue", title: "Live Dispatch", text: "Simulate a live rescue with real-time status and temperature tracking." },
+    { view: "radar", selector: "#corridor-map", title: "Corridor Radar", text: "Hyderabad route visualization of pickups, drop-offs and riders." },
+    { view: "caterer", selector: "#role-select", title: "Role switcher", text: "Switch between Caterer, NGO, EV Rider and Sponsor personas." },
+    { view: "roi", selector: "#kpi-grid", fallback: "#esg-kpis", fallbackView: "impact", title: "Impact and ROI", text: "Meals saved, CO2e prevented and the caterer savings calculator." }
+  ];
+  var tourTargetEl = null;
+
+  // Overlay markup is created once when #tour-overlay is missing from index.html.
+  function tourOverlay() {
+    var overlay = $("tour-overlay");
+    if (overlay || !document.body) return overlay;
+    overlay = document.createElement("div");
+    overlay.id = "tour-overlay";
+    overlay.className = "tour-overlay";
+    overlay.hidden = true;
+    overlay.innerHTML = '<div id="tour-spotlight" class="tour-spotlight"></div>' +
+      '<div id="tour-card" class="tour-card" role="dialog" aria-live="polite">' +
+      '<p class="tour-step-count"></p><h3 class="tour-title"></h3><p class="tour-text"></p>' +
+      '<div class="tour-actions">' +
+      '<button type="button" class="btn" data-action="tour-back">Back</button>' +
+      '<button type="button" class="btn btn-primary" data-action="tour-next">Next</button>' +
+      '<button type="button" class="btn" data-action="tour-exit">Exit tour</button>' +
+      "</div></div>";
+    document.body.appendChild(overlay);
+    return overlay;
+  }
+
+  // Removes is-on from the current target and from every tour selector.
+  function clearTourHighlight() {
+    if (tourTargetEl && tourTargetEl.classList) tourTargetEl.classList.remove("is-on");
+    tourTargetEl = null;
+    TOUR_STEPS.forEach(function (s) {
+      [s.selector, s.fallback].forEach(function (sel) {
+        var el = sel ? document.querySelector(sel) : null;
+        if (el && el.classList) el.classList.remove("is-on");
+      });
+    });
+  }
+
+  // Spotlight sits 8 px outside the target's box, 16 px larger in each direction.
+  function positionTourSpotlight() {
+    var spot = $("tour-spotlight");
+    if (!spot || !tourTargetEl || typeof tourTargetEl.getBoundingClientRect !== "function") return;
+    var r = tourTargetEl.getBoundingClientRect();
+    spot.style.position = "fixed";
+    spot.style.top = (r.top - 8) + "px";
+    spot.style.left = (r.left - 8) + "px";
+    spot.style.width = (r.width + 16) + "px";
+    spot.style.height = (r.height + 16) + "px";
+  }
+
+  function renderTourCard(index) {
+    var card = $("tour-card");
+    if (!card) return;
+    var step = TOUR_STEPS[index];
+    var count = card.querySelector(".tour-step-count");
+    var title = card.querySelector(".tour-title");
+    var text = card.querySelector(".tour-text");
+    var back = card.querySelector('[data-action="tour-back"]');
+    if (count) count.textContent = "Step " + (index + 1) + " of " + TOUR_STEPS.length;
+    if (title) title.textContent = step.title;
+    if (text) text.textContent = step.text;
+    if (back) back.disabled = index === 0;
+  }
+
+  // Shows one step. Switches view (fallbackView when the primary selector is missing).
+  // A step with no findable target is skipped forward.
+  function showTourStep(index) {
+    if (index >= TOUR_STEPS.length) { exitTour(); return; }
+    if (index < 0) index = 0;
+    var step = TOUR_STEPS[index];
+    var useFallback = !document.querySelector(step.selector);
+    var viewName = useFallback && step.fallbackView ? step.fallbackView : step.view;
+    var targetSel = useFallback ? step.fallback : step.selector;
+    var target = null;
+    if (targetSel) {
+      if (viewName) setView(viewName);
+      target = document.querySelector(targetSel);
+    }
+    if (!target) { showTourStep(index + 1); return; }
+    clearTourHighlight();
+    state.tour.step = index;
+    try {
+      target.scrollIntoView({ block: "center", behavior: "smooth" });
+    } catch (err) { /* scrolling is cosmetic */ }
+    tourTargetEl = target;
+    target.classList.add("is-on");
+    var overlay = tourOverlay();
+    if (overlay) overlay.hidden = false;
+    positionTourSpotlight();
+    // Smooth scroll moves the target after this call; re-measure once it settles.
+    window.setTimeout(function () { if (state.tour.active) positionTourSpotlight(); }, 450);
+    renderTourCard(index);
+  }
+
+  function startTour() {
+    state.tour.active = true;
+    state.tour.step = 0;
+    showTourStep(0);
+  }
+
+  function nextTourStep() {
+    if (!state.tour.active) return;
+    if (state.tour.step >= TOUR_STEPS.length - 1) { exitTour(); return; }
+    showTourStep(state.tour.step + 1);
+  }
+
+  function prevTourStep() {
+    if (!state.tour.active) return;
+    showTourStep(Math.max(0, state.tour.step - 1));
+  }
+
+  function exitTour() {
+    state.tour.active = false;
+    state.tour.step = 0;
+    clearTourHighlight();
+    var overlay = $("tour-overlay");
+    if (overlay) overlay.hidden = true;
+  }
+
   function renderAll() {
     populateEsgSelect();
     renderCatererList();
@@ -3489,6 +3692,7 @@
     renderCapacityBars();
     renderSplitClaim();
     renderSafety();
+    renderMatchBreakdown();
     renderEsgKpis();
     renderEsgMethodology();
     renderNavBadges();
@@ -3544,6 +3748,36 @@
       renderAll();
     } else if (action === "handling") {
       openHandling(id);
+    } else if (action === "dispatch-top-match") {
+      var dispatchBatch = findBatch(id);
+      if (!dispatchBatch || dispatchBatch.locked || dispatchBatch.status !== "Posted") {
+        var openNote = dispatchBatch
+          ? dispatchBatch.id + " is no longer open (" + dispatchBatch.status + ")."
+          : id + " is no longer open (missing).";
+        if (dispatchBatch) dispatchBatch.dispatchNote = openNote;
+        showToast("Dispatch blocked", openNote, "warn");
+      } else {
+        var topMatches = matchBreakdown(dispatchBatch);
+        if (!topMatches.length) {
+          dispatchBatch.dispatchNote = "No compatible NGO with capacity right now.";
+          showToast("Dispatch blocked", dispatchBatch.dispatchNote, "warn");
+        } else {
+          var topNgo = topMatches[0].ngo;
+          assignToNgo(dispatchBatch, topNgo, "");
+          queueClaimedAlerts(dispatchBatch);
+          showToast("Dispatched", dispatchBatch.id + " assigned to " + topNgo.name, "ok");
+        }
+      }
+      renderAll();
+      saveDb();
+    } else if (action === "tour-start") {
+      startTour();
+    } else if (action === "tour-next") {
+      nextTourStep();
+    } else if (action === "tour-back") {
+      prevTourStep();
+    } else if (action === "tour-exit") {
+      exitTour();
     }
   });
 
@@ -3695,6 +3929,13 @@
   });
   window.addEventListener("afterprint", function () {
     if (document.body) document.body.classList.remove("printing-receipt");
+  });
+  // Tour: keep the spotlight on its target while the window resizes; Escape exits. Attached once.
+  window.addEventListener("resize", function () {
+    if (state.tour.active) positionTourSpotlight();
+  });
+  document.addEventListener("keydown", function (e) {
+    if (state.tour.active && e.key === "Escape") exitTour();
   });
   updateWhatsAppBadge();
   renderAll();
