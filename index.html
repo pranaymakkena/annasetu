@@ -32,6 +32,8 @@
         <input id="header-search-input" type="search" placeholder="Search batch ID, caterer, or dish...">
       </div>
       <span id="city-status-pill" class="status-pill"><span class="status-dot" aria-hidden="true"></span>Hyderabad Corridor • Active</span>
+      <button id="whatsapp-toggle" class="btn btn-secondary whatsapp-toggle" type="button" aria-label="WhatsApp alerts" aria-controls="whatsapp-drawer" aria-expanded="false"><i data-lucide="message-circle" aria-hidden="true"></i><span>WhatsApp Alerts</span><span id="whatsapp-badge" class="whatsapp-badge" hidden>0</span></button>
+
       <div class="role-switcher"><label for="role-select" class="role-label">Logged in as</label><select id="role-select" class="role-select" aria-label="Logged in as"><option value="">Select role</option><option value="ramesh">Ramesh K. (Deccan Royal Caterers)</option><option value="meera">Meera S. (Annapurna Seva NGO)</option><option value="arjun">Arjun V. (EV Rider R-07)</option><option value="vikram">Vikram R. (TechPark CSR Sponsor)</option></select></div>
     </header>
 
@@ -438,5 +440,8 @@
   <script src="data.js"></script>
   <script src="app.js"></script>
 <div id="toast-container" role="status" aria-live="polite"></div>
+<aside id="whatsapp-drawer" class="whatsapp-drawer" hidden aria-label="WhatsApp alerts"><div class="whatsapp-drawer-head"><strong>WhatsApp alerts</strong><button type="button" class="btn btn-secondary" data-action="close-whatsapp">Close</button></div><p class="whatsapp-note">Simulated messages to the NGO Coordinator and EV Rider. Not sent to any phone.</p><div id="whatsapp-messages" class="whatsapp-messages" aria-live="polite"></div></aside>
+<div id="handover-modal" class="handover-modal" hidden role="dialog" aria-modal="true" aria-labelledby="handover-title"><div class="handover-dialog"><div class="handover-actions"><button type="button" class="btn btn-primary" data-action="print-receipt"><i data-lucide="download" aria-hidden="true"></i> Print / Save PDF</button><button type="button" class="btn btn-secondary" data-action="close-modal">Close</button></div><section id="handover-slip" class="handover-slip"></section></div></div>
+
 </body>
 </html>
