@@ -9,25 +9,41 @@
   var MEAL_KG = 0.4;
   var CO2_FACTOR = 2.5;
   var MEAL_VALUE_INR = 65;
+  // Assumption (illustrative, not sourced): blended raw-food cost of one kg of surplus, INR per kg.
+  // Used only for the caterer waste-insight saving: 8% x kg x this constant.
+  var RAW_FOOD_COST_PER_KG_INR = 120;
   // Business model: Tier 1 SaaS subscription per caterer per month; Tier 2 CSR stipend per rescue.
   var SUBSCRIPTION_INR = 1999;
   var TIER2_PER_RESCUE_INR = 40;
   var STAGES = ["Posted", "Claimed", "Collected", "Delivered"];
-  // Synthetic riders for dispatch, assigned round-robin. Names and vehicles are fictional.
-  var RIDERS = [
-    { name: "Rider R-07", vehicle: "Bike (EV)" },
-    { name: "Rider R-12", vehicle: "Scooter" },
-    { name: "Rider R-19", vehicle: "Cargo auto" }
-  ];
+  // Riders come from data.js (name, phone). Vehicles are fictional and assigned by position.
+  var VEHICLES = ["Bike (EV)", "Scooter", "Cargo auto"];
+  var RIDERS = D.RIDERS.map(function (r, i) {
+    return { name: r.name, phone: r.phone, vehicle: VEHICLES[i % VEHICLES.length] };
+  });
+
+  // Seed caterers are objects {name, phone} in data.js; batches keep the name as a string
+  // and carry the phone in catererPhone.
+  function normalizeSeedBatches(batches) {
+    batches.forEach(function (b) {
+      if (b.caterer && typeof b.caterer === "object") {
+        b.catererPhone = b.caterer.phone;
+        b.caterer = b.caterer.name;
+      }
+    });
+    return batches;
+  }
 
   var state = {
-    batches: D.buildSeedBatches(Date.now()),
+    batches: normalizeSeedBatches(D.buildSeedBatches(Date.now())),
     ngos: D.NGOS,
     catererFilter: "",
     feedMsg: "",
     nextNum: 1005,
     riderIdx: 0,
-    roi: { events: 20, kgPerEvent: 35, costPerKg: 12, feePerEvent: 150 },
+    dispatchFilter: "all",
+    // Manual NGO override choices per Posted batch id; kept across re-renders.
+    overrides: {},
     // Draft choices for the donate form. kg/meals are read from the slider on each change.
     donate: { foodChoice: "", customFood: "", diet: "", kg: 20, meals: 50, windowHours: null,
       cookedHoursAgo: null, storage: "", allergens: [], packaging: "" }
@@ -98,6 +114,16 @@
       if (RIDERS[i].name === name) return RIDERS[i].vehicle;
     }
     return "";
+  }
+  function riderPhone(name) {
+    for (var i = 0; i < RIDERS.length; i++) {
+      if (RIDERS[i].name === name) return RIDERS[i].phone;
+    }
+    return "";
+  }
+  // Inline phone chip; empty string when there is no number.
+  function phoneSpan(phone) {
+    return phone ? ' <span class="contact-phone">' + esc(phone) + "</span>" : "";
   }
   // ETA in minutes: distance at 0.25 km per minute, minimum 5.
   function etaFor(b) {
@@ -189,19 +215,9 @@
     return changed;
   }
 
-  // Posted -> Claimed: top-ranked NGO with room for the whole batch, round-robin rider.
-  function claimBatch(id) {
-    var b = findBatch(id);
-    if (!b || b.locked || b.status !== "Posted") return;
-    var ranked = rankNgos(state.ngos, { diet: b.diet, meals: b.servings }).filter(function (m) {
-      return remaining(m.ngo) >= b.servings;
-    });
-    if (!ranked.length) {
-      b.dispatchNote = "No compatible NGO with capacity right now.";
-      state.feedMsg = b.id + " not claimed: no compatible NGO with capacity right now.";
-      return;
-    }
-    var ngo = ranked[0].ngo;
+  // Shared assignment path for Smart Match and manual override: Posted -> Claimed with a
+  // round-robin rider. suffix is appended to the feed message.
+  function assignToNgo(b, ngo, suffix) {
     var rider = RIDERS[state.riderIdx % RIDERS.length];
     state.riderIdx += 1;
     var now = Date.now();
@@ -213,8 +229,46 @@
     b.etaMin = Math.max(5, Math.round(ngo.distance_km / 0.25));
     b.claimedAt = now;
     b.events.push({ type: "Claimed", at: now });
-    state.feedMsg = b.id + " claimed by " + ngo.name + " (" + fmtNum(ngo.distance_km) + " km). " +
+    state.feedMsg = b.id + " claimed by " + ngo.name + suffix + " (" + fmtNum(ngo.distance_km) + " km). " +
       b.rider + " (" + b.vehicle + ") assigned.";
+  }
+
+  // Posted -> Claimed (Smart Match): top-ranked NGO with room for the whole batch.
+  function claimBatch(id) {
+    var b = findBatch(id);
+    if (!b || b.locked || b.status !== "Posted") return;
+    var ranked = rankNgos(state.ngos, { diet: b.diet, meals: b.servings }).filter(function (m) {
+      return remaining(m.ngo) >= b.servings;
+    });
+    if (!ranked.length) {
+      b.dispatchNote = "No compatible NGO with capacity right now.";
+      state.feedMsg = b.id + " not claimed: no compatible NGO with capacity right now.";
+      return;
+    }
+    assignToNgo(b, ranked[0].ngo, "");
+  }
+
+  // Posted -> Claimed with the NGO chosen in the Manual NGO Override select.
+  // Checks diet compatibility and remaining capacity before assigning.
+  function overrideAssign(id) {
+    var b = findBatch(id);
+    if (!b || b.locked || b.status !== "Posted") return;
+    var ngo = ngoById(state.overrides[id] || "");
+    if (!ngo) {
+      state.feedMsg = b.id + ": choose an NGO in the override list first.";
+      return;
+    }
+    if (!dietOk(ngo.pref, b.diet)) {
+      state.feedMsg = b.id + " not assigned: " + ngo.name + " does not accept " + b.diet + ".";
+      return;
+    }
+    if (remaining(ngo) < b.servings) {
+      state.feedMsg = b.id + " not assigned: " + ngo.name + " has " + remaining(ngo) +
+        " servings left, batch needs " + b.servings + ".";
+      return;
+    }
+    delete state.overrides[id];
+    assignToNgo(b, ngo, " (manual override)");
   }
 
   // Claimed -> Collected, only after the temperature checkbox is ticked.
@@ -251,8 +305,17 @@
   function feedActionsHtml(b) {
     if (b.locked || b.status === "Expired" || b.status === "Delivered") return "";
     if (b.status === "Posted") {
+      var chosen = state.overrides[b.id] || "";
+      var options = '<option value="">Manual NGO Override\u2026</option>' + state.ngos.map(function (n) {
+        return '<option value="' + esc(n.id) + '"' + (n.id === chosen ? " selected" : "") + ">" +
+          esc(n.name + " \u00B7 " + n.locality) + "</option>";
+      }).join("");
       return '<button type="button" class="btn btn-primary" data-action="claim" data-id="' + esc(b.id) +
-        '">Claim Batch (Assign Volunteer)</button>';
+        '">Claim Batch (Smart Match)</button>' +
+        '<label class="ngo-override">Manual NGO Override<select data-override-select="' + esc(b.id) + '">' +
+        options + "</select></label>" +
+        '<button type="button" class="btn btn-secondary" data-action="override-assign" data-id="' + esc(b.id) +
+        '">Confirm Override</button>';
     }
     if (b.status === "Claimed") {
       return '<label class="temp-check"><input type="checkbox" data-temp-check="' + esc(b.id) + '"' +
@@ -275,9 +338,14 @@
     if (!b || !modal || !body) return;
     var allergens = b.allergens && b.allergens.length ? b.allergens.join(", ") :
       "none declared by caterer (verify on receipt)";
+    var ngo = b.ngoId ? ngoById(b.ngoId) : null;
+    var contacts = "<p>Caterer: " + esc(b.caterer) + phoneSpan(b.catererPhone) + "</p>";
+    if (ngo) contacts += "<p>NGO: " + esc(ngo.name) + phoneSpan(ngo.phone) + "</p>";
+    if (b.rider) contacts += "<p>Rider: " + esc(b.rider) + phoneSpan(riderPhone(b.rider)) + "</p>";
     body.innerHTML =
       "<h3>Receiver Handling &amp; Safety Checklist</h3>" +
       "<p>" + esc(b.id) + " \u00B7 " + esc(b.food) + "</p>" +
+      contacts +
       "<ul>" +
       "<li>Check smell and temperature before serving. Reject if off-smell or outside the safe range.</li>" +
       "<li>Consume within 1 hour of delivery.</li>" +
@@ -441,6 +509,12 @@
   // ---------- donate form: submit ----------
   function onDonateSubmit(e) {
     e.preventDefault();
+    submitDonateBatch();
+  }
+
+  // Validates the draft and creates one Posted batch. Shared by the form submit and the
+  // one-click wedding autofill.
+  function submitDonateBatch() {
     var d = state.donate;
     var msg = $("donate-msg");
     var caterer = $("donate-form").elements.caterer.value.trim();
@@ -516,6 +590,51 @@
     renderAll();
   }
 
+  // One-click sample: fills every draft field with a realistic wedding surplus, then creates the batch.
+  function autofillWeddingSurplus() {
+    var d = state.donate;
+    $("donate-form").elements.caterer.value = "Lakeview Wedding Kitchens";
+    $("locality-select").value = "Jubilee Hills";
+    d.foodChoice = "Veg Biryani & Salan";
+    d.customFood = "";
+    d.diet = "Veg";
+    $("kg-slider").value = "40";
+    d.windowHours = 2;
+    d.cookedHoursAgo = 1;
+    d.storage = "Hot-held";
+    d.allergens = ["Dairy"];
+    d.packaging = "Sealed Foil Trays";
+    renderDonateWidgets();
+    submitDonateBatch();
+  }
+
+  // Waste pattern insight from ALL batches (seeds included): the dish with the largest share of
+  // surplus kg, its share of total kg, and the saving from cutting that dish's prep by 8%.
+  // Saving = 8% x kg x RAW_FOOD_COST_PER_KG_INR (assumption, see constant at top of file).
+  function renderWasteInsight() {
+    var el = $("waste-insight-text");
+    if (!el) return;
+    var byDish = {};
+    var totalKg = 0;
+    state.batches.forEach(function (b) {
+      var kg = Number(b.kg) || 0;
+      totalKg += kg;
+      byDish[b.food] = (byDish[b.food] || 0) + kg;
+    });
+    var top = null;
+    Object.keys(byDish).forEach(function (dish) {
+      if (top === null || byDish[dish] > byDish[top]) top = dish;
+    });
+    if (top === null || totalKg <= 0) {
+      el.textContent = "No surplus batches yet. Post one to see your waste pattern.";
+      return;
+    }
+    var sharePct = Math.round(100 * byDish[top] / totalKg);
+    var saving = Math.round(0.08 * byDish[top] * RAW_FOOD_COST_PER_KG_INR);
+    el.textContent = "Insight: " + top + " batches account for " + sharePct +
+      "% of your monthly surplus \u2014 reducing prep by 8% saves \u20B9" + saving.toLocaleString("en-IN") + "/mo";
+  }
+
   // ---------- render: shared pieces ----------
   function badgeHtml(status) {
     return '<span class="badge badge-' + esc(status.toLowerCase()) + '">' + esc(status) + "</span>";
@@ -568,19 +687,20 @@
     tickCountdowns();
   }
 
-  // Pickup tracker: a step list with completed stages ticked and the current stage marked.
-  function stageDetailHtml(b, i, idx) {
-    if (i === 1 && idx === 1 && b.rider) {
+  // One detail line for the CURRENT stage, shown beneath the stepper (never inside a step pill).
+  // Returns trusted inner HTML, or "" when the current stage has nothing to add.
+  function stageDetailHtml(b, idx) {
+    if (idx === 1 && b.rider) {
       var vehicle = b.vehicle || riderVehicle(b.rider);
-      return '<span class="step-detail">Rider: ' + esc(b.rider) + " \u2022 " + esc(vehicle) +
-        " \u2022 ETA " + esc(etaFor(b)) + " min</span>";
+      return "Rider: " + esc(b.rider) + phoneSpan(riderPhone(b.rider)) + " \u2022 " + esc(vehicle) +
+        " \u2022 ETA " + esc(etaFor(b)) + " min";
     }
-    if (i === 2 && idx >= 2) {
+    if (idx === 2) {
       var at = b.collectedAt || eventAt(b, "Collected");
-      return at ? '<span class="step-detail">Picked up ' + esc(hhmm(at)) + "</span>" : "";
+      return at ? "Picked up " + esc(hhmm(at)) : "";
     }
-    if (i === 3 && idx === 3) {
-      return '<span class="step-detail">Delivered \u2022 +' + esc(creditsFor(b)) + " impact credits</span>";
+    if (idx === 3) {
+      return "Delivered \u2022 +" + esc(creditsFor(b)) + " impact credits";
     }
     return "";
   }
@@ -590,36 +710,62 @@
     var steps = STAGES.map(function (name, i) {
       var cls = idx === -1 ? "pending" : (i < idx ? "done" : (i === idx ? "current" : "pending"));
       var mark = cls === "done" ? "\u2713 " : "";
-      return '<li class="step ' + cls + '">' + mark + esc(name) + stageDetailHtml(b, i, idx) + "</li>";
+      return '<li class="step ' + cls + '">' + mark + esc(name) + "</li>";
     }).join("");
-    return '<ol class="tracker" aria-label="Pickup stages">' + steps + "</ol>";
+    var detail = stageDetailHtml(b, idx);
+    return '<div class="tracker-wrap"><ol class="tracker" aria-label="Pickup stages">' + steps + "</ol>" +
+      (detail ? '<p class="step-detail">' + detail + "</p>" : "") + "</div>";
   }
 
-  // Compact SVG radar: donor at the centre, NGO pins at deterministic angles,
-  // and a rider dot on the donor-to-NGO line for in-transit stages.
+  // Radar scale: the 10 km ring sits at RADAR_MAX_PX from the centre (fits the 200 viewBox).
+  var RADAR_RINGS_KM = [2, 5, 10];
+  var RADAR_MAX_PX = 78;
+  function radarPx(km) {
+    var px = (Number(km) || 0) * (RADAR_MAX_PX / 10);
+    return Math.min(RADAR_MAX_PX, px);
+  }
+
+  // Compact SVG radar: donor at the centre, distance rings (2/5/10 km), NGO pins at
+  // deterministic angles with short labels, a route line to the assigned NGO and a rider dot.
   function renderRadar(b) {
     var C = 100;
-    var maxKm = 1;
-    state.ngos.forEach(function (n) { if (n.distance_km > maxKm) maxKm = n.distance_km; });
     var ngo = b.ngoId ? ngoById(b.ngoId) : null;
     var assignedPt = null;
     var out = '<svg class="radar" viewBox="0 0 200 200" role="img" aria-label="' +
       esc("Dispatch radar for " + b.id) + '">';
 
-    [25, 50, 75].forEach(function (r) {
-      out += '<circle class="radar-ring" cx="100" cy="100" r="' + r + '" fill="none"></circle>';
+    RADAR_RINGS_KM.forEach(function (km) {
+      var r = radarPx(km);
+      out += '<circle class="radar-ring" cx="' + C + '" cy="' + C + '" r="' + r + '" fill="none"></circle>';
+      // Ring label sits on the upper-right diagonal, just outside the ring.
+      var lx = (C + (r + 2) * Math.cos(-Math.PI / 4)).toFixed(1);
+      var ly = (C + (r + 2) * Math.sin(-Math.PI / 4)).toFixed(1);
+      out += '<text class="radar-label radar-ring-label" x="' + lx + '" y="' + ly + '">' + km + " km</text>";
+    });
+
+    // Route line from donor centre to the assigned NGO (drawn before pins so pins sit on top).
+    state.ngos.forEach(function (n, i) {
+      if (ngo && ngo.id === n.id) {
+        var ang0 = -Math.PI / 2 + (i * 2 * Math.PI) / state.ngos.length;
+        var rr = radarPx(n.distance_km);
+        assignedPt = { x: C + rr * Math.cos(ang0), y: C + rr * Math.sin(ang0) };
+        out += '<line class="radar-route" x1="' + C + '" y1="' + C + '" x2="' + assignedPt.x.toFixed(1) +
+          '" y2="' + assignedPt.y.toFixed(1) + '"></line>';
+      }
     });
 
     state.ngos.forEach(function (n, i) {
       var ang = -Math.PI / 2 + (i * 2 * Math.PI) / state.ngos.length;
-      var r = 18 + (n.distance_km / maxKm) * 68;
+      var r = radarPx(n.distance_km);
       var x = (C + r * Math.cos(ang)).toFixed(1);
       var y = (C + r * Math.sin(ang)).toFixed(1);
       var assigned = !!ngo && ngo.id === n.id;
-      if (assigned) assignedPt = { x: Number(x), y: Number(y) };
+      var short = String(n.name).split(" ").slice(0, 2).join(" ");
       out += '<g class="ngo-pin' + (assigned ? " assigned" : "") + '"><title>' + esc(n.name) + "</title>" +
         '<circle cx="' + x + '" cy="' + y + '" r="7"></circle>' +
-        '<text x="' + x + '" y="' + y + '" text-anchor="middle" dy="3">' + esc(n.name.charAt(0)) + "</text></g>";
+        '<text x="' + x + '" y="' + y + '" text-anchor="middle" dy="3">' + esc(n.name.charAt(0)) + "</text>" +
+        '<text class="radar-label" x="' + x + '" y="' + (Number(y) - 10).toFixed(1) +
+        '" text-anchor="middle">' + esc(short) + "</text></g>";
     });
 
     out += '<circle class="donor-pin" cx="100" cy="100" r="6"></circle>';
@@ -644,11 +790,12 @@
     var html = '<article class="card ' + cls + '">';
     html += '<div class="card-body">';
     html += '<div class="card-top"><h3>' + esc(b.food) + "</h3>" + badgeHtml(b.status) + "</div>";
-    html += '<p class="meta"><strong>' + esc(b.id) + "</strong> · " + esc(b.caterer) + " · " + esc(b.locality) + "</p>";
+    html += '<p class="meta"><strong>' + esc(b.id) + "</strong> · " + esc(b.caterer) + " · " + esc(b.locality) +
+      phoneSpan(b.catererPhone) + "</p>";
     html += '<p class="meta">' + esc(b.diet) + " · " + esc(b.servings) + " servings · " + fmtNum(b.kg) + " kg</p>";
     html += '<p class="meta">Prepared ' + fmtTime(b.preparedAt) + " · Expires " + fmtTime(b.expiresAt) + "</p>";
     if (ngo) {
-      html += '<p class="meta">NGO: ' + esc(ngo.name) + "</p>";
+      html += '<p class="meta">NGO: ' + esc(ngo.name) + phoneSpan(ngo.phone) + "</p>";
     }
     html += urgencyHtml(b, now);
     if (b.dispatchNote) html += '<p class="warn">' + esc(b.dispatchNote) + "</p>";
@@ -739,19 +886,42 @@
     }).join("");
   }
 
+  // Dispatch filter predicates. Urgent = under URGENT_MIN minutes left (not Delivered/Expired).
+  // In Transit = rider assigned (Claimed or Collected).
+  function passesDispatchFilter(b, now) {
+    var f = state.dispatchFilter;
+    if (f === "urgent") return isUrgent(b, now);
+    if (f === "posted") return b.status === "Posted";
+    if (f === "transit") return isLive(b);
+    if (f === "delivered") return b.status === "Delivered";
+    return true;
+  }
+
+  // Pill state for #dispatch-filters: one active button, aria-pressed mirrors it.
+  function syncDispatchFilterButtons() {
+    var bar = $("dispatch-filters");
+    if (!bar) return;
+    Array.prototype.forEach.call(bar.querySelectorAll("[data-filter]"), function (btn) {
+      var on = btn.getAttribute("data-filter") === state.dispatchFilter;
+      btn.classList.toggle("active", on);
+      btn.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+
   function renderFeed() {
     var now = Date.now();
     lockExpired(now);
     renderNgoPanel();
     $("feed-msg").textContent = state.feedMsg;
+    syncDispatchFilterButtons();
 
-    var posted = state.batches.filter(function (b) { return b.status === "Posted"; })
+    var posted = state.batches.filter(function (b) { return b.status === "Posted" && passesDispatchFilter(b, now); })
       .sort(function (a, b) { return a.expiresAt - b.expiresAt; });
     $("feed-posted").innerHTML = posted.length ? posted.map(function (b) {
       return cardHtml(b, now, feedActionsHtml(b));
     }).join("") : '<p class="empty">No open batches right now.</p>';
 
-    var active = state.batches.filter(function (b) { return b.status !== "Posted"; })
+    var active = state.batches.filter(function (b) { return b.status !== "Posted" && passesDispatchFilter(b, now); })
       .sort(function (a, b) { return b.preparedAt - a.preparedAt; });
     $("feed-active").innerHTML = active.length ? active.map(function (b) {
       return cardHtml(b, now, feedActionsHtml(b));
@@ -835,27 +1005,51 @@
   }
 
   // ---------- pure business-model logic (no DOM) ----------
-  // Tier 1 MRR = caterers x 1999. Tier 2 sponsorship is reported separately and never added to MRR.
+  // Illustrative planning assumptions (not measured, not sourced). They drive only the cost-per-meal KPI:
+  // cost per meal = (total rescues x rider cost per rescue + fixed platform cost per month) / meals rescued.
+  // Defaults (50 caterers x 12 rescues x 20 kg) give 600 rescues, 30,000 meals, 24,000 INR -> INR 0.80 / meal.
+  var RIDER_COST_PER_RESCUE_INR = 30;
+  var PLATFORM_FIXED_COST_INR_PER_MONTH = 6000;
+
+  // Tier 1 MRR = caterers x 1999. Tier 2 CSR logistics credits = total rescues x CSR share x 40.
+  // Tier 2 is reported separately from MRR and added only to total platform revenue.
+  // csrSharePct is 0-100; invalid or negative inputs are clamped to 0.
   function calcBusinessModel(input) {
-    var caterers = Number(input.caterers) || 0;
-    var rescuesPerMonth = Number(input.rescuesPerMonth) || 0;
-    var kgPerRescue = Number(input.kgPerRescue) || 0;
-    var savingsPct = Number(input.savingsPct) || 0;
-    var rawSpendInr = Number(input.rawSpendInr) || 0;
+    var caterers = Math.max(0, Number(input.caterers) || 0);
+    var rescuesPerCaterer = Math.max(0, Number(input.rescuesPerMonth) || 0);
+    var kgPerRescue = Math.max(0, Number(input.kgPerRescue) || 0);
+    var savingsPct = Math.max(0, Number(input.savingsPct) || 0);
+    var rawSpendInr = Math.max(0, Number(input.rawSpendInr) || 0);
+    var csrShare = Math.min(100, Math.max(0, Number(input.csrSharePct) || 0)) / 100;
 
     var mrr = caterers * SUBSCRIPTION_INR;
     var perCatererSavings = rawSpendInr * savingsPct / 100;
-    var perCatererRoi = perCatererSavings / SUBSCRIPTION_INR;
+    var perCatererNet = perCatererSavings - SUBSCRIPTION_INR;
+    var perCatererRoi = SUBSCRIPTION_INR > 0 ? perCatererSavings / SUBSCRIPTION_INR : 0;
     var totalSavings = caterers * perCatererSavings;
-    var tier2Inr = caterers * rescuesPerMonth * TIER2_PER_RESCUE_INR;
+
+    var totalRescues = caterers * rescuesPerCaterer;
+    var csrRescues = totalRescues * csrShare;
+    var tier2Inr = csrRescues * TIER2_PER_RESCUE_INR;
+    var totalPlatformRevenue = mrr + tier2Inr;
+
+    var rescuedKg = totalRescues * kgPerRescue;
+    var meals = rescuedKg / MEAL_KG;
+    var logisticsInr = totalRescues * RIDER_COST_PER_RESCUE_INR + PLATFORM_FIXED_COST_INR_PER_MONTH;
+
     return {
       mrr: mrr,
       perCatererSavings: perCatererSavings,
+      perCatererNet: perCatererNet,
       perCatererRoi: perCatererRoi,
       totalSavings: totalSavings,
       tier2Inr: tier2Inr,
-      totalPlatformRevenue: mrr + tier2Inr,
-      totalMealsPerMonth: Math.round(caterers * rescuesPerMonth * kgPerRescue / MEAL_KG)
+      totalPlatformRevenue: totalPlatformRevenue,
+      arr: totalPlatformRevenue * 12,
+      totalMealsPerMonth: Math.round(meals),
+      rescuedKg: rescuedKg,
+      co2Kg: rescuedKg * CO2_FACTOR,
+      costPerMeal: meals > 0 ? logisticsInr / meals : null
     };
   }
 
@@ -878,32 +1072,87 @@
       kpiCardHtml("Average Rescue Turnaround Time", fmtNum(t.avgTurnaroundMin), "min", "");
   }
 
-  function renderLedgerEvents() {
-    var body = $("ledger-events-body");
-    if (!body) return;
+  // One row per batch event, oldest first. Shared by the table and the CSV export.
+  function ledgerRows() {
     var rows = [];
     state.batches.forEach(function (b) {
       (b.events || []).forEach(function (e) {
-        rows.push({ at: e.at, b: b, type: e.type });
+        var ngo = b.ngoId ? ngoById(b.ngoId) : null;
+        rows.push({
+          at: e.at,
+          batchId: b.id,
+          caterer: b.caterer,
+          event: e.type,
+          ngo: ngo ? ngo.name : "-",
+          rider: b.rider || "-"
+        });
       });
     });
     rows.sort(function (a, c) { return a.at - c.at; });
+    return rows;
+  }
 
+  function renderLedgerEvents() {
+    var body = $("ledger-events-body");
+    if (!body) return;
+    var rows = ledgerRows();
     body.innerHTML = rows.length ? rows.map(function (r) {
-      var ngo = r.b.ngoId ? ngoById(r.b.ngoId) : null;
       return "<tr>" +
         "<td>" + esc(hhmm(r.at)) + "</td>" +
-        "<td>" + esc(r.b.id) + "</td>" +
-        "<td>" + esc(r.b.caterer) + "</td>" +
-        "<td>" + esc(r.type) + "</td>" +
-        "<td>" + esc(ngo ? ngo.name : "-") + "</td>" +
-        "<td>" + esc(r.b.rider || "-") + "</td>" +
+        "<td>" + esc(r.batchId) + "</td>" +
+        "<td>" + esc(r.caterer) + "</td>" +
+        "<td>" + esc(r.event) + "</td>" +
+        "<td>" + esc(r.ngo) + "</td>" +
+        "<td>" + esc(r.rider) + "</td>" +
         "</tr>";
     }).join("") : '<tr><td colspan="6">No events yet.</td></tr>';
   }
 
+  // Horizontal bars: rescued kg (Delivered batches) split Veg vs Non-Veg.
+  function renderCategoryBars() {
+    var el = $("category-bars");
+    if (!el) return;
+    var kg = { Veg: 0, "Non-Veg": 0 };
+    state.batches.forEach(function (b) {
+      if (b.status === "Delivered" && kg.hasOwnProperty(b.diet)) kg[b.diet] += Number(b.kg) || 0;
+    });
+    var total = kg.Veg + kg["Non-Veg"];
+    function row(label, cls, value) {
+      var pct = total > 0 ? Math.round(100 * value / total) : 0;
+      return '<div class="cat-bar-row"><span>' + esc(label) + " \u00B7 " + esc(fmtNum(value)) + " kg</span>" +
+        '<div class="cat-bar-track"><span class="cat-bar-fill ' + cls + '" style="width: ' + pct +
+        '%"></span></div></div>';
+    }
+    el.innerHTML = row("Veg", "veg", kg.Veg) + row("Non-Veg", "nonveg", kg["Non-Veg"]);
+  }
+
+  // Quotes every field and doubles embedded quotes (RFC 4180 style).
+  function csvField(v) {
+    return '"' + String(v === null || v === undefined ? "" : v).replace(/"/g, '""') + '"';
+  }
+
+  function downloadAuditCsv() {
+    var lines = [["Timestamp", "Batch ID", "Caterer", "Event", "NGO", "Rider"]];
+    ledgerRows().forEach(function (r) {
+      lines.push([new Date(r.at).toISOString(), r.batchId, r.caterer, r.event, r.ngo, r.rider]);
+    });
+    var csv = lines.map(function (cols) {
+      return cols.map(csvField).join(",");
+    }).join("\n");
+    var blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = "annasetu-audit-log.csv";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 0);
+  }
+
   function renderImpact() {
     renderLedgerKpis(computeLedgerTotals(state.batches));
+    renderCategoryBars();
     renderLedgerEvents();
   }
 
@@ -957,51 +1206,10 @@
     if (printBtn) printBtn.classList.remove("hidden");
   }
 
-  // ---------- render: view 4 (ROI) ----------
-  function renderRoiOutputs() {
-    var out = $("roi-out");
-    if (!out) return;
-    var r = state.roi;
-    var kgDiverted = r.events * r.kgPerEvent;
-    var disposalAvoided = kgDiverted * r.costPerKg;
-    var fees = r.events * r.feePerEvent;
-    var net = disposalAvoided - fees;
-
-    out.innerHTML =
-      '<table><tbody>' +
-      "<tr><td>Kg diverted per month</td><td><strong>" + fmtNum(kgDiverted) + " kg</strong></td></tr>" +
-      "<tr><td>Monthly disposal cost avoided</td><td><strong>" + fmtInr(disposalAvoided) + "</strong></td></tr>" +
-      "<tr><td>Platform fees paid</td><td><strong>" + fmtInr(fees) + "</strong></td></tr>" +
-      "<tr><td>Net monthly savings</td><td><strong>" + fmtInr(net) + "</strong></td></tr>" +
-      "</tbody></table>" +
-      '<p class="hint">Formula: disposal avoided = events &times; kg per event &times; cost per kg; ' +
-      "net = disposal avoided &minus; (events &times; fee per event). All inputs are illustrative assumptions.</p>";
-  }
-
-  function readRoiInputs() {
-    function num(id, fallback) {
-      var el = $(id);
-      if (!el) return fallback;
-      var v = Number(el.value);
-      return isFinite(v) && v >= 0 ? v : fallback;
-    }
-    state.roi = {
-      events: num("roi-events", 0),
-      kgPerEvent: num("roi-kg", 0),
-      costPerKg: num("roi-cost", 0),
-      feePerEvent: num("roi-fee", 0)
-    };
-  }
-
   // ---------- render: business model & ROI ----------
   function setTextIfPresent(id, text) {
     var el = $(id);
     if (el) el.textContent = text;
-  }
-
-  function setValueIfPresent(id, v) {
-    var el = $(id);
-    if (el) el.value = v;
   }
 
   // Result card: main line set with textContent; optional sub-line added as a child element.
@@ -1036,18 +1244,21 @@
     var kg = bmInputValue("bm-kg", 20);
     var savingsPct = bmInputValue("bm-waste-pct", 10);
     var rawSpend = bmInputValue("bm-raw-spend", 150000);
+    var csrShare = Math.round(bmInputValue("roi-csr-share", 20));
 
     setTextIfPresent("bm-caterers-out", String(caterers));
     setTextIfPresent("bm-rescues-out", String(rescues));
     setTextIfPresent("bm-kg-out", kg + " kg");
     setTextIfPresent("bm-waste-pct-out", savingsPct + "%");
+    setTextIfPresent("roi-csr-share-val", csrShare + "%");
 
     var r = calcBusinessModel({
       caterers: caterers,
       rescuesPerMonth: rescues,
       kgPerRescue: kg,
       savingsPct: savingsPct,
-      rawSpendInr: rawSpend
+      rawSpendInr: rawSpend,
+      csrSharePct: csrShare
     });
 
     setCardText("bm-mrr", "MRR \u20B9" + bmInt(r.mrr) + " / month", "SaaS subscriptions only");
@@ -1061,7 +1272,109 @@
       " \u00B7 Caterer savings = raw spend \u00D7 savings% " +
       "\u00B7 ROI = savings \u00F7 \u20B9" + bmInt(SUBSCRIPTION_INR) +
       " \u00B7 Meals = caterers \u00D7 rescues \u00D7 kg \u00F7 0.4 " +
-      "\u00B7 Tier 2 sponsorship = rescues \u00D7 \u20B940 (not included in MRR)");
+      "\u00B7 CSR credits = rescues \u00D7 CSR share \u00D7 \u20B9" + bmInt(TIER2_PER_RESCUE_INR) +
+      " \u00B7 Total platform revenue = MRR + CSR credits");
+
+    renderRoiKpis(r);
+  }
+
+  // Six KPI cards in #kpi-grid. Every value is computed from the sliders via calcBusinessModel.
+  function renderRoiKpis(r) {
+    var el = $("kpi-grid");
+    if (!el) return;
+    var roiText = isFinite(r.perCatererRoi) ? r.perCatererRoi.toFixed(1) + "x" : "\u2014";
+    var cpmText = r.costPerMeal === null ? "\u2014" : "\u20B9" + r.costPerMeal.toFixed(2) + " / meal";
+    el.innerHTML =
+      kpiCardHtml("Total Monthly Platform Revenue", "\u20B9" + bmInt(r.totalPlatformRevenue) + " / mo",
+        "SaaS MRR (caterers \u00D7 \u20B9" + bmInt(SUBSCRIPTION_INR) + ") + CSR logistics credits " +
+        "(rescues/mo \u00D7 CSR share \u00D7 \u20B9" + bmInt(TIER2_PER_RESCUE_INR) + ")", "") +
+      kpiCardHtml("Annualized Run Rate (ARR)", "\u20B9" + bmInt(r.arr) + " / yr",
+        "Total monthly revenue \u00D7 12", "") +
+      kpiCardHtml("Caterer Net Monthly Savings", "\u20B9" + bmInt(r.perCatererNet) + " / mo",
+        "(raw food spend \u00D7 waste reduction %) \u2212 \u20B9" + bmInt(SUBSCRIPTION_INR) + " per caterer", "") +
+      kpiCardHtml("Caterer ROI Multiple", roiText,
+        "raw food savings per caterer \u00F7 \u20B9" + bmInt(SUBSCRIPTION_INR), "kpi-emerald") +
+      kpiCardHtml("Cost Per Meal Rescued", cpmText,
+        "Illustrative assumption: \u20B9" + bmInt(RIDER_COST_PER_RESCUE_INR) + " rider cost per rescue + \u20B9" +
+        bmInt(PLATFORM_FIXED_COST_INR_PER_MONTH) + " fixed platform cost per month, \u00F7 meals rescued", "") +
+      kpiCardHtml("Monthly Meals & CO2e Impact at Scale", bmInt(r.totalMealsPerMonth) + " meals",
+        "CO2e " + bmInt(r.co2Kg) + " kg (rescued kg \u00D7 " + CO2_FACTOR + "); meals = kg \u00F7 " + MEAL_KG,
+        "kpi-emerald");
+  }
+
+  // Static Monetization Stream cards (#revenue-streams). Rendered once from initRoiTab().
+  var ROI_STREAMS = [
+    {
+      title: "Caterer SaaS & Kitchen Waste Intelligence",
+      price: "\u20B91,999 / mo per caterer",
+      note: "Pays for itself 7.5x by cutting raw-material overproduction by 8\u201312% (default assumptions)."
+    },
+    {
+      title: "Corporate CSR Logistics Credits",
+      price: "\u20B940 / rescue or \u20B912,000 / mo CSR packs",
+      note: "Hyderabad IT parks & corporates fund last-mile EV rider stipends with auditable ESG impact."
+    },
+    {
+      title: "Convention Center & Hotel Zero-Waste Compliance",
+      price: "\u20B99,999 / mo enterprise tier",
+      note: "Bulk municipal solid-waste diversion reporting for large venues."
+    }
+  ];
+
+  function renderRevenueStreams() {
+    var el = $("revenue-streams");
+    if (!el) return;
+    el.innerHTML = ROI_STREAMS.map(function (s) {
+      return '<article class="pillar-card"><h3>' + esc(s.title) + '</h3><p class="price">' + esc(s.price) +
+        "</p><p>" + esc(s.note) + "</p></article>";
+    }).join("");
+  }
+
+  // Static "Why Caterers & Sponsors Pay" comparison (#value-matrix). Rendered once from initRoiTab().
+  var VALUE_MATRIX_ROWS = [
+    ["Cost of surplus disposal",
+      "Surplus goes to landfill; disposal and hauling costs are not recovered",
+      "Surplus routed to partner NGOs by rider; disposal cost avoided for each completed pickup"],
+    ["Raw-material overproduction visibility",
+      "No record of which dishes are repeatedly over-cooked",
+      "Dish-level waste pattern alert; 8\u201312% raw-material saving target"],
+    ["Compliance / MSW diversion proof",
+      "No diversion record for municipal solid-waste reporting",
+      "Timestamped batch ledger and monthly diversion summary (kg, CO2e)"],
+    ["ESG / CSR auditability",
+      "ESG claims are anecdotal and hard to verify",
+      "Batch-level CSV audit log behind every ESG summary (operational report, not a tax certificate)"],
+    ["Community impact",
+      "Surplus meals are lost",
+      "Meals routed to NGOs (kg \u00F7 0.4 kg per meal)"],
+    ["Setup & rider logistics",
+      "Caterer staff arrange ad hoc transport",
+      "Rider dispatch with assigned vehicle, ETA and contact numbers"],
+    ["Price (per caterer)",
+      "No subscription; disposal cost unrecovered",
+      "\u20B91,999 / month SaaS subscription"]
+  ];
+
+  function renderValueMatrix() {
+    var el = $("value-matrix");
+    if (!el) return;
+    var head = "<tr><th>Dimension</th><th>Status Quo (Landfill / Disposal Loss)</th><th>AnnaSetu Pro</th></tr>";
+    var body = VALUE_MATRIX_ROWS.map(function (row) {
+      return "<tr><th>" + esc(row[0]) + "</th><td>" + esc(row[1]) + "</td><td>" + esc(row[2]) + "</td></tr>";
+    }).join("");
+    el.innerHTML = '<table class="ledger-table"><thead>' + head + "</thead><tbody>" + body + "</tbody></table>";
+  }
+
+  // One-time ROI tab setup: static cards/table, plus live listeners on every simulator control.
+  function initRoiTab() {
+    renderRevenueStreams();
+    renderValueMatrix();
+    ["bm-caterers", "bm-rescues", "bm-kg", "bm-waste-pct", "bm-raw-spend", "roi-csr-share"].forEach(function (id) {
+      var el = $(id);
+      if (!el) return;
+      el.addEventListener("input", renderBusinessModel);
+      el.addEventListener("change", renderBusinessModel);
+    });
   }
 
   // Copies the seed batches and NGOs once, at load, before any user action.
@@ -1107,6 +1420,7 @@
     state.riderIdx = 0;
     state.feedMsg = "";
     state.catererFilter = "";
+    state.overrides = {};
 
     var form = $("donate-form");
     if (form) form.reset();
@@ -1128,11 +1442,62 @@
     roi: function () { renderBusinessModel(); }
   };
 
+  // Quick stats. Active = not Delivered and not Expired. Meals = kg / MEAL_KG per Delivered batch.
+  // Avg pickup = mean minutes from Posted to Collected (picked up), else to Claimed (assigned).
+  // CO2e = rescued (Delivered) kg x CO2_FACTOR, same basis as the ledger.
+  function renderPulse() {
+    var now = new Date();
+    var active = 0;
+    var mealsToday = 0;
+    var pickupSum = 0;
+    var pickupCount = 0;
+    state.batches.forEach(function (b) {
+      if (b.status !== "Delivered" && b.status !== "Expired") active += 1;
+      if (b.status === "Delivered") {
+        var d = deliveredAtOf(b);
+        if (d !== null) {
+          var dd = new Date(d);
+          if (dd.getFullYear() === now.getFullYear() && dd.getMonth() === now.getMonth() &&
+              dd.getDate() === now.getDate()) {
+            mealsToday += Math.round((Number(b.kg) || 0) / MEAL_KG);
+          }
+        }
+      }
+      if (b.status === "Expired") return;
+      var posted = postedAtOf(b);
+      var picked = eventAt(b, "Collected");
+      var reached = picked !== null ? picked : eventAt(b, "Claimed");
+      if (posted !== null && reached !== null) {
+        pickupSum += (reached - posted) / MIN;
+        pickupCount += 1;
+      }
+    });
+    var totals = computeLedgerTotals(state.batches);
+    setTextIfPresent("pulse-active-batches", String(active));
+    setTextIfPresent("pulse-meals-today", fmtNum(mealsToday));
+    setTextIfPresent("pulse-avg-pickup", pickupCount ? String(Math.round(pickupSum / pickupCount)) : "\u2014");
+    setTextIfPresent("pulse-co2e", fmtNum(totals.co2Kg));
+  }
+
+  // Header status pill: sets the label text only, keeping the existing dot element.
+  function setCityStatusPill() {
+    var pill = $("city-status-pill");
+    if (!pill) return;
+    var label = "Hyderabad Corridor \u2022 Live Dispatch";
+    if (pill.textContent.replace(/\s+/g, " ").trim() === label) return;
+    var dot = pill.querySelector(".status-dot");
+    pill.textContent = "";
+    if (dot) pill.appendChild(dot);
+    pill.appendChild(document.createTextNode(label));
+  }
+
   function renderAll() {
     populateEsgSelect();
     renderCatererList();
+    renderWasteInsight();
     renderFeed();
     renderImpact();
+    renderPulse();
     renderBusinessModel();
   }
 
@@ -1165,6 +1530,9 @@
     } else if (action === "claim") {
       claimBatch(id);
       renderAll();
+    } else if (action === "override-assign") {
+      overrideAssign(id);
+      renderAll();
     } else if (action === "confirm-pickup") {
       confirmPickup(id);
       renderAll();
@@ -1179,12 +1547,35 @@
   // Temperature checkbox state lives on the batch so it survives the 30 s re-render.
   document.addEventListener("change", function (e) {
     var t = e.target;
-    if (!t || !t.hasAttribute || !t.hasAttribute("data-temp-check")) return;
+    if (!t || !t.hasAttribute) return;
+    if (t.hasAttribute("data-override-select")) {
+      // Stored on state (not re-rendered) so the choice survives the periodic feed refresh.
+      state.overrides[t.getAttribute("data-override-select")] = t.value;
+      return;
+    }
+    if (!t.hasAttribute("data-temp-check")) return;
     var b = findBatch(t.getAttribute("data-temp-check"));
     if (!b) return;
     b.tempChecked = t.checked;
     renderFeed();
   });
+
+  // Dispatch filter pills: switch the filter and re-render the feed.
+  var dispatchFilters = $("dispatch-filters");
+  if (dispatchFilters) {
+    dispatchFilters.addEventListener("click", function (e) {
+      var btn = e.target.closest ? e.target.closest("[data-filter]") : null;
+      if (!btn) return;
+      state.dispatchFilter = btn.getAttribute("data-filter");
+      renderFeed();
+    });
+  }
+
+  var autofillBtn = $("btn-autofill-wedding");
+  if (autofillBtn) autofillBtn.addEventListener("click", autofillWeddingSurplus);
+
+  var csvBtn = $("btn-download-csv");
+  if (csvBtn) csvBtn.addEventListener("click", downloadAuditCsv);
 
 
   var donateForm = $("donate-form");
@@ -1198,20 +1589,7 @@
     renderCatererList();
   });
 
-  var roiForm = $("roi-form");
-  if (roiForm) {
-    roiForm.addEventListener("input", function () {
-      readRoiInputs();
-      renderRoiOutputs();
-    });
-  }
-
-  ["bm-caterers", "bm-rescues", "bm-kg", "bm-waste-pct", "bm-raw-spend"].forEach(function (id) {
-    var el = $(id);
-    if (!el) return;
-    el.addEventListener("input", renderBusinessModel);
-    el.addEventListener("change", renderBusinessModel);
-  });
+  // ROI slider listeners are attached in initRoiTab() (called from init below).
 
   var resetBtn = $("reset-demo-btn");
   if (resetBtn) resetBtn.addEventListener("click", resetDemoData);
@@ -1227,15 +1605,14 @@
 
 
   // ---------- init ----------
-  $("legal-text").textContent = D.DISCLAIMER;
+  var legal = $("legal-text");
+  if (legal) legal.textContent = D.DISCLAIMER;
+  setCityStatusPill();
   renderLocalitySelect();
   renderDonateWidgets();
   takeSeedSnapshot();
-  setValueIfPresent("roi-events", state.roi.events);
-  setValueIfPresent("roi-kg", state.roi.kgPerEvent);
-  setValueIfPresent("roi-cost", state.roi.costPerKg);
-  setValueIfPresent("roi-fee", state.roi.feePerEvent);
   populateCatererFilter();
+  initRoiTab();
   renderAll();
 
   // Refresh urgency countdowns and live feed every 30 seconds.
@@ -1244,5 +1621,6 @@
     renderCatererList();
     renderFeed();
     renderImpact();
+    renderPulse();
   }, 30 * 1000);
 })();

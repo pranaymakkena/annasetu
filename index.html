@@ -18,6 +18,7 @@
         <p class="tagline">Hyperlocal surplus food rescue for event &amp; wedding caterers, Hyderabad</p>
       </div>
     </div>
+    <span id="city-status-pill" class="status-pill"><span class="status-dot" aria-hidden="true"></span>Hyderabad Corridor • Live Dispatch</span>
   </header>
 
   <nav class="tabs" role="tablist" aria-label="Main views">
@@ -27,6 +28,13 @@
     <button class="tab" role="tab" aria-selected="false" aria-controls="view-roi" data-action="tab" data-view="roi">Business Model &amp; ROI</button>
   </nav>
 
+  <section id="pulse-strip" class="pulse-strip" aria-label="Live city pulse">
+    <div class="pulse-tile"><span class="pulse-label">Active Batches</span><strong id="pulse-active-batches" class="pulse-value">—</strong></div>
+    <div class="pulse-tile"><span class="pulse-label">Meals Rescued Today</span><strong id="pulse-meals-today" class="pulse-value">—</strong></div>
+    <div class="pulse-tile"><span class="pulse-label">Avg Pickup Speed (mins)</span><strong id="pulse-avg-pickup" class="pulse-value">—</strong></div>
+    <div class="pulse-tile"><span class="pulse-label">CO2e Saved (kg)</span><strong id="pulse-co2e" class="pulse-value">—</strong></div>
+  </section>
+
   <main>
     <!-- 1. Caterer Portal (Donate) -->
     <section id="view-caterer" class="view active" role="tabpanel">
@@ -35,6 +43,12 @@
           <h2>Post a surplus batch</h2>
           <p class="hint">Use the sample caterer names only. Figures are illustrative.</p>
           <form id="donate-form" novalidate>
+            <button type="button" id="btn-autofill-wedding" class="btn primary">Auto-Fill Sample Wedding Surplus (15s Demo)</button>
+            <div id="waste-insight-box" class="insight-box" role="note">
+              <h3>Caterer Waste Pattern Alert</h3>
+              <p id="waste-insight-text"></p>
+            </div>
+
             <label>Caterer name
               <input name="caterer" type="text" maxlength="60" required placeholder="e.g. Deccan Royal Caterers">
             </label>
@@ -150,6 +164,13 @@
       <h2>NGO capacity (servings/day)</h2>
       <div id="ngo-panel" class="ngo-grid"></div>
       <p id="feed-msg" class="form-msg" role="status"></p>
+      <div id="dispatch-filters" class="filter-pills" role="group" aria-label="Filter batches">
+        <button type="button" class="filter-pill active" data-filter="all" aria-pressed="true">All Batches</button>
+        <button type="button" class="filter-pill" data-filter="urgent" aria-pressed="false">Urgent (&lt;45m)</button>
+        <button type="button" class="filter-pill" data-filter="posted" aria-pressed="false">Posted</button>
+        <button type="button" class="filter-pill" data-filter="transit" aria-pressed="false">In Transit</button>
+        <button type="button" class="filter-pill" data-filter="delivered" aria-pressed="false">Delivered</button>
+      </div>
       <div class="grid-2">
         <section class="panel">
           <h2>Live feed: open Posted batches</h2>
@@ -169,7 +190,15 @@
 
       <section class="panel">
         <h2>Batch event ledger (timestamps)</h2>
-        <div class="table-wrap"><table class="ledger-table"><thead><tr><th>Time</th><th>Batch</th><th>Caterer</th><th>Event</th></tr></thead><tbody id="ledger-events-body"></tbody></table></div>
+        <div id="category-bars" class="category-bars" aria-label="Veg vs Non-Veg split"></div>
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr><th>Timestamp</th><th>Batch ID</th><th>Caterer</th><th>Event</th><th>NGO</th><th>Rider</th></tr>
+            </thead>
+            <tbody id="ledger-events-body"></tbody>
+          </table>
+        </div>
       </section>
 
 
@@ -194,21 +223,10 @@
         <div id="esg-report-preview"></div>
         <button type="button" id="esg-generate-btn">Generate Monthly ESG Summary</button>
         <button type="button" id="esg-print-btn" class="hidden">Print / Save as PDF</button>
+        <button type="button" id="btn-download-csv" class="btn-secondary">Download CSV Audit Log</button>
         <p class="esg-note">This is an operational sustainability report, not a tax-exemption certificate. AnnaSetu does not guarantee tax deductions or legal exemptions.</p>
       </section>
 
-      <div id="impact-stats" class="stat-grid hidden" hidden></div>
-      <section class="panel">
-        <h2>Batch event ledger <span class="pill">illustrative / synthetic</span></h2>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr><th>Timestamp</th><th>Batch</th><th>Caterer</th><th>Event</th><th>NGO</th><th>Rider</th></tr>
-            </thead>
-            <tbody id="ledger-body"></tbody>
-          </table>
-        </div>
-      </section>
     </section>
 
     <!-- 4. Business Model & ROI -->
@@ -244,6 +262,11 @@
         </article>
       </div>
 
+      <section class="panel revenue-wrap">
+        <h2>Monetization Streams</h2>
+        <div id="revenue-streams" class="pillar-grid"></div>
+      </section>
+
       <section id="bm-calc" class="calc-card">
         <h2>Unit-Economics &amp; ROI Calculator</h2>
         <div class="field-group">
@@ -266,6 +289,10 @@
           <label for="bm-raw-spend">Caterer monthly raw-food spend (₹)</label>
           <input type="number" id="bm-raw-spend" value="150000" min="0" step="1000">
         </div>
+        <div class="field-group">
+          <label for="roi-csr-share">CSR Sponsored Rescue Share (%): <output id="roi-csr-share-val"></output></label>
+          <input type="range" id="roi-csr-share" min="0" max="100" step="1" value="20">
+        </div>
 
         <div id="bm-results" class="kpi-grid">
           <div class="kpi-card">
@@ -285,20 +312,24 @@
             <div class="kpi-value" id="bm-meals"></div>
           </div>
         </div>
+        <div id="kpi-grid" class="kpi-grid"></div>
         <p id="bm-formula" class="esg-note"></p>
+      </section>
+
+      <section class="panel">
+        <h2>Why Caterers &amp; Sponsors Pay (Value Matrix)</h2>
+        <div id="value-matrix" class="table-wrap"></div>
       </section>
 
     </section>
   </main>
 
   <footer class="site-footer">
-    <p id="legal-text" class="legal">Disclaimer: AnnaSetu is a logistics coordination platform only. We do not inspect, test, or certify food safety, nor do we guarantee tax deductions or legal exemptions. Receivers must verify food condition upon pickup.</p>
+    <p id="legal-text" class="legal">Synthetic demo only. Caterers, NGOs, riders, localities, and coordinates are fictional placeholders. Phone numbers are placeholders such as +91-XXXXX-00000. AnnaSetu coordinates pickups only and does not certify food safety or guarantee tax/legal benefits. Disclaimer: AnnaSetu is a logistics coordination platform only. We do not inspect, test, or certify food safety, nor do we guarantee tax deductions or legal exemptions. Receivers must verify food condition upon pickup.</p>
     <div class="reset-row">
       <button type="button" id="reset-demo-btn" class="btn-secondary">Reset Demo Data</button>
     </div>
     <p id="reset-msg" role="status"></p>
-
-    <p class="small">Synthetic demo only. Caterers, NGOs, riders, localities, and coordinates are fictional placeholders. Phone numbers are placeholders such as +91-XXXXX-00000. AnnaSetu coordinates pickups only and does not certify food safety or guarantee tax/legal benefits.</p>
   </footer>
 
   <div id="handling-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="handling-title">

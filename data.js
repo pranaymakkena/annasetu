@@ -18,14 +18,21 @@
 
   // Fictional NGOs. distance_km is measured from the sample caterer hub.
   var NGOS = [
-    { id: "ngo-asha", name: "Asha Community Kitchen", locality: "Kondapur", pref: "Both", capacity: 300, distance_km: 3.2 },
-    { id: "ngo-annapurna", name: "Annapurna Seva Trust", locality: "Madhapur", pref: "Veg", capacity: 250, distance_km: 2.1 },
-    { id: "ngo-hope", name: "Hope Street Community Kitchen", locality: "Gachibowli", pref: "Non-Veg", capacity: 200, distance_km: 6.8 },
-    { id: "ngo-sahayam", name: "Sahayam Food Bank", locality: "Jubilee Hills", pref: "Both", capacity: 350, distance_km: 9.4 }
+    { id: "ngo-asha", name: "Asha Community Kitchen", locality: "Kondapur", pref: "Both", capacity: 300, distance_km: 3.2, phone: "+91-XXXXX-00001" },
+    { id: "ngo-annapurna", name: "Annapurna Seva Trust", locality: "Madhapur", pref: "Veg", capacity: 250, distance_km: 2.1, phone: "+91-XXXXX-00002" },
+    { id: "ngo-hope", name: "Hope Street Community Kitchen", locality: "Gachibowli", pref: "Non-Veg", capacity: 200, distance_km: 6.8, phone: "+91-XXXXX-00003" },
+    { id: "ngo-sahayam", name: "Sahayam Food Bank", locality: "Jubilee Hills", pref: "Both", capacity: 350, distance_km: 9.4, phone: "+91-XXXXX-00004" }
   ];
 
-  // Fictional rider IDs.
-  var RIDERS = ["Rider R-07", "Rider R-03", "Rider R-11", "Rider R-14", "Rider R-02", "Rider R-19"];
+  // Fictional riders. Each entry is an object: { name, phone }.
+  var RIDERS = [
+    { name: "Rider R-07", phone: "+91-XXXXX-00001" },
+    { name: "Rider R-03", phone: "+91-XXXXX-00002" },
+    { name: "Rider R-11", phone: "+91-XXXXX-00003" },
+    { name: "Rider R-14", phone: "+91-XXXXX-00004" },
+    { name: "Rider R-02", phone: "+91-XXXXX-00005" },
+    { name: "Rider R-19", phone: "+91-XXXXX-00006" }
+  ];
 
   function placed(o) {
     var loc = LOCALITIES[o.locality];
@@ -41,31 +48,31 @@
     }
     return [
       placed({
-        id: "AS-1001", caterer: "Deccan Royal Caterers", locality: "Madhapur",
+        id: "AS-1001", caterer: { name: "Deccan Royal Caterers", phone: "+91-XXXXX-00001" }, locality: "Madhapur",
         food: "Chicken biryani with raita", diet: "Non-Veg", servings: 120, kg: 40,
         preparedAt: now - 95 * MIN, expiresAt: now + 30 * MIN,
         ngoId: null, rider: null, claimedAt: null, status: "Posted",
         events: [ev("Posted", now - 95 * MIN)]
       }),
       placed({
-        id: "AS-1002", caterer: "Saffron Feast Events", locality: "Gachibowli",
+        id: "AS-1002", caterer: { name: "Saffron Feast Events", phone: "+91-XXXXX-00002" }, locality: "Gachibowli",
         food: "Veg thali (dal, paneer, rice, roti)", diet: "Veg", servings: 150, kg: 55,
         preparedAt: now - 150 * MIN, expiresAt: now + 170 * MIN,
-        ngoId: "ngo-annapurna", rider: RIDERS[0], claimedAt: now - 40 * MIN, status: "Claimed",
+        ngoId: "ngo-annapurna", rider: RIDERS[0].name, claimedAt: now - 40 * MIN, status: "Claimed",
         events: [ev("Posted", now - 150 * MIN), ev("Claimed", now - 40 * MIN)]
       }),
       placed({
-        id: "AS-1003", caterer: "Lakeview Wedding Kitchens", locality: "Jubilee Hills",
+        id: "AS-1003", caterer: { name: "Lakeview Wedding Kitchens", phone: "+91-XXXXX-00003" }, locality: "Jubilee Hills",
         food: "Vegetable pulao with sweet boxes", diet: "Veg", servings: 100, kg: 30,
         preparedAt: now - 200 * MIN, expiresAt: now + 90 * MIN,
-        ngoId: "ngo-asha", rider: RIDERS[1], claimedAt: now - 70 * MIN, status: "Collected",
+        ngoId: "ngo-asha", rider: RIDERS[1].name, claimedAt: now - 70 * MIN, status: "Collected",
         events: [ev("Posted", now - 200 * MIN), ev("Claimed", now - 70 * MIN), ev("Collected", now - 25 * MIN)]
       }),
       placed({
-        id: "AS-1004", caterer: "Kondapur Celebrations Co.", locality: "Kondapur",
+        id: "AS-1004", caterer: { name: "Kondapur Celebrations Co.", phone: "+91-XXXXX-00004" }, locality: "Kondapur",
         food: "Mixed dessert boxes", diet: "Veg", servings: 80, kg: 12,
         preparedAt: now - 300 * MIN, expiresAt: now + 120 * MIN,
-        ngoId: "ngo-sahayam", rider: RIDERS[2], claimedAt: now - 200 * MIN, status: "Delivered",
+        ngoId: "ngo-sahayam", rider: RIDERS[2].name, claimedAt: now - 200 * MIN, status: "Delivered",
         events: [
           ev("Posted", now - 300 * MIN),
           ev("Claimed", now - 200 * MIN),
