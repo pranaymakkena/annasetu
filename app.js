@@ -16,6 +16,17 @@
   var SUBSCRIPTION_INR = 1999;
   var TIER2_PER_RESCUE_INR = 40;
   var STAGES = ["Posted", "Claimed", "Collected", "Delivered"];
+  // localStorage key for the persisted demo database (batches, ngos, nextNum, activeRole).
+  var DB_KEY = "annasetu_db_v1";
+  // Single shared locality list: header filter and impact locality bars.
+  var LOCALITY_LIST = ["Madhapur", "Gachibowli", "Kondapur", "Jubilee Hills", "Hitech City", "Banjara Hills"];
+  // Synthetic persona -> landing view and optional dispatch filter (Arjun = active pickups = "transit").
+  var ROLE_VIEWS = {
+    ramesh: { view: "caterer" },
+    meera: { view: "feed" },
+    arjun: { view: "feed", filter: "transit" },
+    vikram: { view: "roi" }
+  };
   // Riders come from data.js (name, phone). Vehicles are fictional and assigned by position.
   var VEHICLES = ["Bike (EV)", "Scooter", "Cargo auto"];
   var RIDERS = D.RIDERS.map(function (r, i) {
@@ -41,7 +52,9 @@
     searchQuery: "",
     localityFilter: "",
     feedMsg: "",
-    nextNum: 1005,
+    nextNum: 1009,
+    // Synthetic persona chosen in #role-select ("" = none). Persisted with the DB.
+    activeRole: "",
     riderIdx: 0,
     dispatchFilter: "all",
     // Manual NGO override choices per Posted batch id; kept across re-renders.
@@ -52,8 +65,12 @@
   };
 
   var tickerId = null;
+  // Set while a re-render must not write to localStorage (header search keystrokes).
+  var saveSuppressed = false;
   var seedSnapshot = null;
   var resetMsgTimer = null;
+  // Batch ids already announced as expiry-locked (not persisted; one toast per batch).
+  var expiryToasted = new Set();
 
   // ---------- helpers ----------
   function $(id) { return document.getElementById(id); }
@@ -80,6 +97,32 @@
   }
 
   function pad(n) { return (n < 10 ? "0" : "") + n; }
+
+  // Toast in #toast-container (created when missing). Text is set with textContent only.
+  // type: "ok" (default), "warn" or "error". Gets class "leaving" at 3200 ms, removed at 3500 ms.
+  function showToast(title, detail, type) {
+    var kind = type === "warn" || type === "error" ? type : "ok";
+    var host = $("toast-container");
+    if (!host) {
+      host = document.createElement("div");
+      host.id = "toast-container";
+      (document.body || document.documentElement).appendChild(host);
+    }
+    var el = document.createElement("div");
+    el.className = "toast toast-" + kind;
+    var titleEl = document.createElement("div");
+    titleEl.className = "toast-title";
+    titleEl.textContent = String(title || "");
+    var detailEl = document.createElement("div");
+    detailEl.className = "toast-detail";
+    detailEl.textContent = String(detail || "");
+    el.appendChild(titleEl);
+    el.appendChild(detailEl);
+    host.appendChild(el);
+    setTimeout(function () { el.classList.add("leaving"); }, 3200);
+    setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 3500);
+    return el;
+  }
 
   function findBatch(id) {
     for (var i = 0; i < state.batches.length; i++) {
@@ -187,6 +230,15 @@
     return Math.round(100 * sum);
   }
 
+  // Per-factor sub-scores (0-100, integers) for the Smart Match breakdown. Same inputs and
+  // expressions as scoreNgo; the total is still scoreNgo's 40/35/25 weighted sum.
+  function matchFactors(ngo, batch) {
+    var distScore = Math.max(0, 1 - ngo.distance_km / 15);
+    var capScore = Math.max(0, Math.min(1, remaining(ngo) / batch.meals));
+    var dietScore = ngo.pref === batch.diet ? 1.0 : (ngo.pref === "Both" ? 0.8 : 0);
+    return { dist: Math.round(100 * distScore), cap: Math.round(100 * capScore), diet: Math.round(100 * dietScore) };
+  }
+
   // All compatible NGOs with spare capacity for a draft batch {diet, meals}, best first.
   function rankNgos(ngos, batch) {
     var eligible = ngos.filter(function (n) {
@@ -211,6 +263,10 @@
         b.status = "Expired";
         b.events.push({ type: "Expired", at: now });
         state.feedMsg = b.id + " expired. Do Not Distribute.";
+        if (!expiryToasted.has(b.id)) {
+          expiryToasted.add(b.id);
+          showToast("Expiry lock", b.id + " is past its safe window \u2014 Do Not Distribute", "error");
+        }
         changed = true;
       }
     });
@@ -233,6 +289,7 @@
     b.events.push({ type: "Claimed", at: now });
     state.feedMsg = b.id + " claimed by " + ngo.name + suffix + " (" + fmtNum(ngo.distance_km) + " km). " +
       b.rider + " (" + b.vehicle + ") assigned.";
+    showToast("Batch claimed", b.id + " assigned to " + ngo.name, "ok");
   }
 
   // Posted -> Claimed (Smart Match): top-ranked NGO with room for the whole batch.
@@ -286,6 +343,7 @@
     b.collectedAt = now;
     b.events.push({ type: "Collected", at: now });
     state.feedMsg = b.id + " collected by " + b.rider + " at " + hhmm(now) + ".";
+    showToast("Temperature verified", b.id + " checked at pickup", "ok");
   }
 
   // Collected -> Delivered: credits = 1 per kg diverted; NGO served count increments.
@@ -301,6 +359,7 @@
     b.events.push({ type: "Delivered", at: now });
     state.feedMsg = b.id + " delivered to " + (ngo ? ngo.name : "NGO") +
       " (+" + b.credits + " impact credits).";
+    showToast("Delivered", b.id + " delivered to " + (ngo ? ngo.name : "NGO"), "ok");
   }
 
   // Action buttons for a feed card. Expired and Delivered listings get none.
@@ -439,16 +498,25 @@
       preview.innerHTML = '<p class="hint">Choose Veg or Non-Veg to see matching NGOs.</p>';
       return;
     }
-    var matches = rankNgos(state.ngos, { diet: d.diet, meals: d.meals }).slice(0, 2);
+    var matches = rankNgos(state.ngos, { diet: d.diet, meals: d.meals }).slice(0, 3);
 
     if (!matches.length) {
       preview.innerHTML = '<p class="hint">No compatible NGO with capacity right now.</p>';
       return;
     }
-    preview.innerHTML = matches.map(function (m) {
-      return '<span class="badge">' + esc(m.pct + "% Match \u2022 " + fmtNum(m.km) + " km away \u2022 Needs " +
-        m.needsMeals + " meals") + "</span>";
-    }).join(" ");
+    // Top 3 with one bar per factor. Totals come from scoreNgo (40/35/25); bars from matchFactors.
+    var draft = { diet: d.diet, meals: d.meals };
+    var pill = function (label, value) {
+      return '<div class="match-pill"><span>' + label + '</span><div class="match-pill-bar">' +
+        '<div class="match-pill-fill" style="width:' + value + '%"></div></div></div>';
+    };
+    preview.innerHTML = '<div class="match-breakdown">' + matches.map(function (m) {
+      var f = matchFactors(m.ngo, draft);
+      return '<div class="match-card"><div class="match-card-head"><span>' + esc(m.ngo.name) +
+        '</span><span class="match-score">' + esc(m.pct) + '%</span></div>' +
+        '<div class="match-pills">' + pill("Distance 40%", f.dist) + pill("Capacity fit 35%", f.cap) +
+        pill("Diet fit 25%", f.diet) + "</div></div>";
+    }).join("") + "</div>";
   }
 
   // Click delegation for every chip / toggle inside the donate form.
@@ -588,6 +656,7 @@
 
     resetDonateForm();
     msg.textContent = "Batch " + id + " posted. It is now live in the NGO & Rider Dispatch feed.";
+    showToast("Batch published", id + " \u00B7 " + food + " is live for dispatch", "ok");
     populateCatererFilter();
     renderAll();
   }
@@ -742,7 +811,7 @@
   }
 
   // Dispatch radar (viewBox 380x280): Caterer Hub at the centre, three dashed distance rings,
-  // four NGO pins at fixed slots with label pills, and a route + rider badge for active batches.
+  // six NGO pins at fixed slots with label pills, and a route + rider badge for active batches.
   function renderRadar(b) {
     var HUB_X = 190, HUB_Y = 135;
     var CANVAS_W = 380, EDGE = 6, CHAR_W = 6.2, PILL_PAD = 12;
@@ -750,7 +819,9 @@
       { id: "ngo-annapurna", short: "Annapurna", km: 2.1, px: 248, py: 88, lx: 258, ly: 84, anchor: "start" },
       { id: "ngo-asha", short: "Asha", km: 3.2, px: 122, py: 78, lx: 112, ly: 74, anchor: "end" },
       { id: "ngo-hope", short: "Hope St", km: 6.8, px: 266, py: 188, lx: 276, ly: 192, anchor: "start" },
-      { id: "ngo-sahayam", short: "Sahayam", km: 9.4, px: 96, py: 196, lx: 86, ly: 200, anchor: "end" }
+      { id: "ngo-sahayam", short: "Sahayam", km: 9.4, px: 96, py: 196, lx: 86, ly: 200, anchor: "end" },
+      { id: "ngo-karuna", short: "Karuna", km: 4.1, px: 292, py: 132, lx: 302, ly: 108, anchor: "start" },
+      { id: "ngo-nirmal", short: "Nirmal", km: 5.6, px: 108, py: 138, lx: 98, ly: 118, anchor: "end" }
     ];
     var ngos = state.ngos || [];
 
@@ -1019,9 +1090,8 @@
   function populateHeaderLocality() {
     var sel = $("header-locality-select");
     if (!sel) return;
-    var names = ["Madhapur", "Gachibowli", "Kondapur", "Jubilee Hills"];
-    if (names.indexOf(state.localityFilter) === -1) state.localityFilter = "";
-    sel.innerHTML = '<option value="">All localities</option>' + names.map(function (n) {
+    if (LOCALITY_LIST.indexOf(state.localityFilter) === -1) state.localityFilter = "";
+    sel.innerHTML = '<option value="">All localities</option>' + LOCALITY_LIST.map(function (n) {
       return '<option value="' + esc(n) + '">' + esc(n) + "</option>";
     }).join("");
     sel.value = state.localityFilter;
@@ -1277,7 +1347,6 @@
   }
 
   // ---------- v5 charts (pure HTML/CSS, no libraries) ----------
-  var IMPACT_LOCALITIES = ["Madhapur", "Gachibowli", "Kondapur", "Jubilee Hills"];
   var CHART_BAR_MAX_PX = 140;
 
   // Percent of a total, guarded against zero.
@@ -1296,7 +1365,7 @@
 
   // Left card: per locality, rescued kg (Delivered) stacked under pipeline kg (open statuses).
   function localityBarsHtml() {
-    var rows = IMPACT_LOCALITIES.map(function (name) {
+    var rows = LOCALITY_LIST.map(function (name) {
       var rescued = 0;
       var pipeline = 0;
       state.batches.forEach(function (b) {
@@ -1709,9 +1778,100 @@
     }, 3000);
   }
 
+  // ---------- persistence (localStorage, synthetic demo only) ----------
+  // Writes batches, ngos, nextNum and activeRole as one JSON object. Never throws.
+  function saveDb() {
+    try {
+      if (!window.localStorage) return false;
+      window.localStorage.setItem(DB_KEY, JSON.stringify({
+        batches: state.batches,
+        ngos: state.ngos,
+        nextNum: state.nextNum,
+        activeRole: state.activeRole,
+        savedAt: Date.now()
+      }));
+      return true;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  // Restores saved fields into state. Keeps seed defaults for anything missing or invalid.
+  // All batch timestamps are numeric milliseconds (no Date objects), so JSON round-trips them.
+  function loadDb() {
+    var raw = null;
+    var saved = null;
+    try {
+      raw = window.localStorage ? window.localStorage.getItem(DB_KEY) : null;
+    } catch (err) {
+      raw = null;
+    }
+    if (!raw) return false;
+    try {
+      saved = JSON.parse(raw);
+    } catch (err) {
+      return false;
+    }
+    if (!saved || typeof saved !== "object") return false;
+    // Stale demo data: if the save is older than 15 minutes, shift batch times forward by the age.
+    // Expired batches and AS-1008 keep their saved times. Without a numeric savedAt, nothing shifts.
+    if (Array.isArray(saved.batches) && typeof saved.savedAt === "number" && isFinite(saved.savedAt)) {
+      var age = Date.now() - saved.savedAt;
+      if (age > 15 * MIN) {
+        saved.batches.forEach(function (b) {
+          if (!b || typeof b !== "object") return;
+          if (b.status === "Expired" || b.id === "AS-1008") return;
+          shiftBatchTimes(b, age);
+        });
+      }
+    }
+    if (Array.isArray(saved.batches)) state.batches = saved.batches;
+    if (Array.isArray(saved.ngos) && saved.ngos.length > 0) {
+      // Old saves with fewer NGOs than the seed list get the current seed list instead.
+      state.ngos = saved.ngos.length >= D.NGOS.length ? saved.ngos : JSON.parse(JSON.stringify(D.NGOS));
+    }
+    if (typeof saved.nextNum === "number" && isFinite(saved.nextNum)) state.nextNum = saved.nextNum;
+    if (typeof saved.activeRole === "string" && ROLE_VIEWS.hasOwnProperty(saved.activeRole)) {
+      state.activeRole = saved.activeRole;
+    }
+    return true;
+  }
+
+  // Shows the persona line in #role-status when present, otherwise in the feed message line.
+  function setRoleStatus(text) {
+    var el = $("role-status");
+    if (el) {
+      el.textContent = text;
+    } else {
+      state.feedMsg = text;
+    }
+  }
+
+  // Header role select: store the persona, persist, then land on its view via setView (no duplicate tab logic).
+  function onRoleChange(e) {
+    var sel = e.target;
+    var role = sel && typeof sel.value === "string" ? sel.value : "";
+    state.activeRole = ROLE_VIEWS.hasOwnProperty(role) ? role : "";
+    saveDb();
+    if (!state.activeRole) {
+      setRoleStatus("");
+      return;
+    }
+    var map = ROLE_VIEWS[state.activeRole];
+    if (map.filter) state.dispatchFilter = map.filter;
+    var label = sel && sel.options && sel.selectedIndex >= 0 ? sel.options[sel.selectedIndex].textContent : state.activeRole;
+    setView(map.view);
+    setRoleStatus("Signed in as " + label + " \u2014 synthetic demo persona.");
+  }
+
   // Restores the load-time seed without reloading the page.
   function resetDemoData() {
     if (!seedSnapshot) return;
+    try {
+      if (window.localStorage) window.localStorage.removeItem(DB_KEY);
+    } catch (err) {
+      // Storage unavailable: the in-memory reset below still applies.
+    }
     var delta = Date.now() - seedSnapshot.now;
     state.batches = JSON.parse(JSON.stringify(seedSnapshot.batches));
     state.batches.forEach(function (b) { shiftBatchTimes(b, delta); });
@@ -1721,6 +1881,9 @@
     state.feedMsg = "";
     state.catererFilter = "";
     state.overrides = {};
+    state.activeRole = "";
+    var roleSel = $("role-select");
+    if (roleSel) roleSel.value = "";
 
     var form = $("donate-form");
     if (form) form.reset();
@@ -1730,8 +1893,101 @@
     hideHandling();
     populateCatererFilter();
     renderAll();
+    saveDb();
     startTicker();
     showResetMessage("Demo reset to seed data.");
+  }
+
+  // ---------- simulate live rescue (demo) ----------
+  // One button: Smart Match claim, pickup with auto temperature check, delivery, SIM_STEP_MS apart.
+  var simRunning = false;
+  var SIM_STEP_MS = 1800;
+
+  function findOpenPostedBatch(now) {
+    for (var i = 0; i < state.batches.length; i++) {
+      var b = state.batches[i];
+      if (b && b.status === "Posted" && !b.locked && b.expiresAt > now) return b;
+    }
+    return null;
+  }
+
+  // Demo batch through the donate submit path (submitDonateBatch), with fixed defaults:
+  // first FOOD_PRESETS dish, Veg, 20 kg, Jubilee Hills, 2 h window, cooked 1 h ago, Hot-held,
+  // Dairy allergen, Sealed Foil Trays, caterer "Lakeview Wedding Kitchens". Returns null if not published.
+  function createDemoBatch() {
+    var d = state.donate;
+    var form = $("donate-form");
+    var presets = D.FOOD_PRESETS || [];
+    var food = presets.length ? presets[0] : "Veg Biryani & Salan";
+    var before = state.batches.length;
+    if (form && form.elements.caterer) form.elements.caterer.value = "Lakeview Wedding Kitchens";
+    var loc = $("locality-select");
+    if (loc) loc.value = "Jubilee Hills";
+    d.foodChoice = food;
+    d.customFood = "";
+    d.diet = "Veg";
+    var slider = $("kg-slider");
+    if (slider) slider.value = "20";
+    d.windowHours = 2;
+    d.cookedHoursAgo = 1;
+    d.storage = "Hot-held";
+    d.allergens = ["Dairy"];
+    d.packaging = "Sealed Foil Trays";
+    renderDonateWidgets();
+    submitDonateBatch();
+    return state.batches.length > before ? state.batches[state.batches.length - 1] : null;
+  }
+
+  function finishSimulation(btn) {
+    simRunning = false;
+    if (btn) btn.disabled = false;
+  }
+
+  // step 1 = Smart Match claim, 2 = pickup with auto temperature check, 3 = delivery.
+  function runSimulationStep(id, step, btn) {
+    setTimeout(function () {
+      try {
+        var b = findBatch(id);
+        if (!b) throw new Error(id + " is no longer in the feed.");
+        if (step === 1) {
+          claimBatch(id);
+          if (b.status !== "Claimed") throw new Error(b.dispatchNote || (id + " was not claimed."));
+        } else if (step === 2) {
+          b.tempChecked = true;
+          confirmPickup(id);
+          if (b.status !== "Collected") throw new Error(state.feedMsg || (id + " was not picked up."));
+        } else {
+          confirmDelivery(id);
+          if (b.status !== "Delivered") throw new Error(state.feedMsg || (id + " was not delivered."));
+        }
+        renderAll();
+      } catch (err) {
+        showToast("Simulation stopped", err && err.message ? err.message : String(err), "error");
+        finishSimulation(btn);
+        return;
+      }
+      if (step < 3) runSimulationStep(id, step + 1, btn);
+      else finishSimulation(btn);
+    }, SIM_STEP_MS);
+  }
+
+  function onSimulateRescue() {
+    if (simRunning) return;
+    var btn = $("btn-simulate-rescue");
+    var batch = null;
+    try {
+      batch = findOpenPostedBatch(Date.now()) || createDemoBatch();
+    } catch (err) {
+      batch = null;
+    }
+    if (!batch) {
+      showToast("Simulation not started", "No open batch, and the demo batch could not be published.", "error");
+      return;
+    }
+    simRunning = true;
+    if (btn) btn.disabled = true;
+    try { setView("feed"); } catch (err) { /* the view switch is cosmetic */ }
+    runSimulationStep(batch.id, 1, btn);
   }
 
   // ---------- navigation & wiring ----------
@@ -1815,6 +2071,7 @@
     renderHeroStats();
     renderBusinessModel();
     if (window.lucide) lucide.createIcons();
+    if (!saveSuppressed) saveDb();
   }
 
   function setView(view) {
@@ -1913,7 +2170,9 @@
   if (headerSearch) {
     headerSearch.addEventListener("input", function (e) {
       state.searchQuery = String((e.target && e.target.value) || "").trim();
-      renderAll();
+      // Keystroke re-render: do not write to localStorage.
+      saveSuppressed = true;
+      try { renderAll(); } finally { saveSuppressed = false; }
     });
   }
   var headerLocality = $("header-locality-select");
@@ -1928,6 +2187,9 @@
 
   var resetBtn = $("reset-demo-btn");
   if (resetBtn) resetBtn.addEventListener("click", resetDemoData);
+
+  var simBtn = $("btn-simulate-rescue");
+  if (simBtn) simBtn.addEventListener("click", onSimulateRescue);
 
   var esgGenBtn = $("esg-generate-btn");
   if (esgGenBtn) esgGenBtn.addEventListener("click", onEsgGenerate);
@@ -1958,10 +2220,17 @@
   setCityStatusPill();
   renderLocalitySelect();
   renderDonateWidgets();
+  // Snapshot the seed first so resetDemoData() still restores the seed, then load saved state.
   takeSeedSnapshot();
+  loadDb();
   populateCatererFilter();
   populateHeaderLocality();
   initRoiTab();
+  var roleSelect = $("role-select");
+  if (roleSelect) {
+    roleSelect.value = state.activeRole || "";
+    roleSelect.addEventListener("change", onRoleChange);
+  }
   renderAll();
 
   // Refresh urgency countdowns and live feed every 30 seconds.

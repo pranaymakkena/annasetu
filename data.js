@@ -13,7 +13,9 @@
     "Madhapur": { lat: 17.4483, lng: 78.3915 },
     "Gachibowli": { lat: 17.4401, lng: 78.3489 },
     "Kondapur": { lat: 17.4611, lng: 78.3564 },
-    "Jubilee Hills": { lat: 17.4326, lng: 78.4071 }
+    "Jubilee Hills": { lat: 17.4326, lng: 78.4071 },
+    "Hitech City": { lat: 17.4435, lng: 78.3772 },
+    "Banjara Hills": { lat: 17.4126, lng: 78.4482 }
   };
 
   // Fictional NGOs. distance_km is measured from the sample caterer hub.
@@ -21,7 +23,9 @@
     { id: "ngo-asha", name: "Asha Community Kitchen", locality: "Kondapur", pref: "Both", capacity: 300, distance_km: 3.2, phone: "+91-XXXXX-00001" },
     { id: "ngo-annapurna", name: "Annapurna Seva Trust", locality: "Madhapur", pref: "Veg", capacity: 250, distance_km: 2.1, phone: "+91-XXXXX-00002" },
     { id: "ngo-hope", name: "Hope Street Community Kitchen", locality: "Gachibowli", pref: "Non-Veg", capacity: 200, distance_km: 6.8, phone: "+91-XXXXX-00003" },
-    { id: "ngo-sahayam", name: "Sahayam Food Bank", locality: "Jubilee Hills", pref: "Both", capacity: 350, distance_km: 9.4, phone: "+91-XXXXX-00004" }
+    { id: "ngo-sahayam", name: "Sahayam Food Bank", locality: "Jubilee Hills", pref: "Both", capacity: 350, distance_km: 9.4, phone: "+91-XXXXX-00004" },
+    { id: "ngo-karuna", name: "Karuna Shelter & Elder Care", locality: "Hitech City", pref: "Veg", capacity: 180, distance_km: 4.1, phone: "+91-XXXXX-00005" },
+    { id: "ngo-nirmal", name: "Nirmal Jyoti Youth Home", locality: "Banjara Hills", pref: "Both", capacity: 260, distance_km: 5.6, phone: "+91-XXXXX-00006" }
   ];
 
   // Fictional riders. Each entry is an object: { name, phone }.
@@ -32,6 +36,18 @@
     { name: "Rider R-14", phone: "+91-XXXXX-00004" },
     { name: "Rider R-02", phone: "+91-XXXXX-00005" },
     { name: "Rider R-19", phone: "+91-XXXXX-00006" }
+  ];
+
+  // Fictional food presets for the caterer form.
+  var FOOD_PRESETS = [
+    "Veg Biryani & Salan",
+    "Chicken Dum Biryani & Raita",
+    "Dal Tadka & Jeera Rice",
+    "Paneer Butter Masala & Naan",
+    "South Indian Tiffin (Idli/Sambar)",
+    "Mutton Haleem & Bread",
+    "Curd Rice & Lemon Rice Combo",
+    "Custom"
   ];
 
   function placed(o) {
@@ -91,6 +107,30 @@
           ev("Collected", now - 230 * MIN),
           ev("Delivered", now - 200 * MIN)
         ]
+      }),
+      placed({
+        id: "AS-1006", caterer: { name: "Hitech Corporate Kitchens", phone: "+91-XXXXX-00006" }, locality: "Hitech City",
+        food: "Paneer Butter Masala & Naan", diet: "Veg", servings: 90, kg: 36,
+        storage: "Hot-held", allergens: ["Dairy"], packaging: "Sealed Foil Trays",
+        preparedAt: now - 40 * MIN, expiresAt: now + 35 * MIN,
+        ngoId: null, rider: null, claimedAt: null, status: "Posted",
+        events: [ev("Posted", now - 40 * MIN)]
+      }),
+      placed({
+        id: "AS-1007", caterer: { name: "Royal Nizam Banquets", phone: "+91-XXXXX-00007" }, locality: "Banjara Hills",
+        food: "Mutton Haleem & Bread", diet: "Non-Veg", servings: 140, kg: 56,
+        storage: "Hot-held", allergens: ["Gluten"], packaging: "Bulk Vessels (Bring Containers)",
+        preparedAt: now - 80 * MIN, expiresAt: now + 110 * MIN,
+        ngoId: "ngo-nirmal", rider: RIDERS[4].name, claimedAt: now - 15 * MIN, status: "Claimed",
+        events: [ev("Posted", now - 80 * MIN), ev("Claimed", now - 15 * MIN)]
+      }),
+      placed({
+        id: "AS-1008", caterer: { name: "Gachibowli TechPark Events", phone: "+91-XXXXX-00008" }, locality: "Gachibowli",
+        food: "South Indian Tiffin (Idli/Sambar)", diet: "Veg", servings: 75, kg: 30,
+        storage: "Room Temp", allergens: [], packaging: "Sealed Foil Trays",
+        preparedAt: now - 260 * MIN, expiresAt: now - 20 * MIN,
+        ngoId: null, rider: null, claimedAt: null, status: "Expired", locked: true,
+        events: [ev("Posted", now - 260 * MIN)]
       })
     ];
   }
@@ -100,6 +140,7 @@
     LOCALITIES: LOCALITIES,
     NGOS: NGOS,
     RIDERS: RIDERS,
+    FOOD_PRESETS: FOOD_PRESETS,
     CO2_FACTOR: 2.5,
     buildSeedBatches: buildSeedBatches
   };

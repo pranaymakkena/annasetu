@@ -27,14 +27,33 @@ AnnaSetu is a static, single-page prototype that lets caterers post surplus cook
 
 Wedding and event caterers in Hyderabad generate large volumes of surplus cooked food after events. AnnaSetu bridges that surplus to nearby shelters and NGO kitchens, with riders assigned for pickup.
 
-The prototype is scoped to four localities that appear in `data.js`:
+The prototype is scoped to six Hyderabad localities that appear in `data.js`:
 
 - Madhapur
 - Gachibowli
 - Kondapur
 - Jubilee Hills
+- Hitech City
+- Banjara Hills
 
 Each locality is stored with placeholder area-centre coordinates. Distances to NGOs are fixed values in the seed data (`distance_km`), not live map routing.
+
+**Seed NGOs (6, fictional):**
+
+| ID | Name | Locality |
+|---|---|---|
+| `ngo-asha` | Asha Community Kitchen | Kondapur |
+| `ngo-annapurna` | Annapurna Seva Trust | Madhapur |
+| `ngo-hope` | Hope Street Community Kitchen | Gachibowli |
+| `ngo-sahayam` | Sahayam Food Bank | Jubilee Hills |
+| `ngo-karuna` | Karuna Shelter & Elder Care | Hitech City |
+| `ngo-nirmal` | Nirmal Jyoti Youth Home | Banjara Hills |
+
+NGO phone numbers use the placeholders `+91-XXXXX-00001` to `+91-XXXXX-00006`.
+
+**Seed batches:** eight batches, `AS-1001` to `AS-1008`, cover the Posted, Claimed, Collected, Delivered and Expired states, with both Veg and Non-Veg food. `AS-1008` is kept as the Expired example.
+
+**Food presets:** the caterer form offers eight presets, from *Veg Biryani & Salan* through *Custom*. They match `FOOD_PRESETS` in `data.js`.
 
 ---
 
@@ -56,8 +75,9 @@ Each locality is stored with placeholder area-centre coordinates. Distances to N
      - Diet fit: exact match = 1.0, NGO accepts "Both" = 0.8, otherwise 0 (ineligible).
    - *Claim Batch (Smart Match)* assigns the top-ranked NGO that has room for the whole batch.
    - *Manual NGO Override* lets you pick an NGO; the code still checks diet compatibility and remaining capacity.
-   - Each card shows an SVG radar with rings at **2, 5 and 10 km**, NGO pins, a route line to the assigned NGO, and a rider dot.
+   - Each card shows an SVG radar with rings at **2, 5 and 10 km**, six NGO pins at fixed slots, and a route line and rider marker for assigned batches.
    - The radar is redrawn on each view render. Countdowns update every second; the radar itself is not animated by the ticker.
+   - **Smart Match factor breakdown:** the top 3 NGOs are listed with bars for Distance (40%), Capacity fit (35%) and Diet fit (25%). These sub-scores are recomputed with the same expressions as the scorer.
 
 3. **Four-stage pickup state machine**
    - Stages: **Posted → Claimed → Collected → Delivered**.
@@ -74,7 +94,11 @@ Each locality is stored with placeholder area-centre coordinates. Distances to N
    - *Generate Monthly ESG Summary* (`#esg-generate-btn`) builds a per-caterer summary for the current calendar month, and *Print / Save as PDF* (`#esg-print-btn`) opens the browser print dialog with a print-only layout.
    - Expired batches are excluded from ledger totals.
 
-5. **Commercial viability and unit-economics simulator**
+5. **Notifications and live demo**
+   - Toast notifications (`#toast-container`) appear for publish, claim, temperature check, delivery and expiry lock, and auto-dismiss after 3.5 s.
+   - *Simulate Live Rescue* (`#btn-simulate-rescue`, in the hero) walks an open batch through Claimed, Collected and Delivered, one step every 1.8 s.
+
+6. **Commercial viability and unit-economics simulator**
    - Tier 1: Caterer SaaS at **₹1,999/month** (`SUBSCRIPTION_INR`). The "7.5x" figure is the default output of the simulator: ₹150,000 raw spend × 10% savings ÷ ₹1,999 ≈ 7.5x. Changing the inputs changes it.
    - Tier 2: Corporate CSR logistics credits at **₹40 per rescue** (`TIER2_PER_RESCUE_INR`). The **₹12,000/month CSR pack** appears as text in the monetisation cards only; it is not calculated.
    - Convention and hotel compliance tier at **₹9,999/month** appears in the monetisation cards only. The "Tier 3" pillar card on the same page says "Custom annual contract."
@@ -88,7 +112,20 @@ Each locality is stored with placeholder area-centre coordinates. Distances to N
 - AnnaSetu facilitates **logistics coordination only**. It does not inspect, test, or certify food safety, and it does not guarantee tax deductions or legal exemptions. The disclaimer is shown on every card and in the handling guide.
 - Receivers are told to check smell and temperature before serving, reject food that is off-smell or outside the safe range, and consume within 1 hour of delivery.
 - All caterers, NGOs, riders, localities and coordinates are **fictional placeholders**.
-- Phone numbers use the placeholder format `+91-XXXXX-000NN`: NGOs `00001`–`00004`, riders `00001`–`00006`, and seed caterers `00001`–`00004`. They are not real numbers.
+- Phone numbers use the placeholder format `+91-XXXXX-000NN`: NGOs `00001`–`00006`, riders `00001`–`00006`, and seed caterers `00001`–`00004`. They are not real numbers.
+
+---
+
+## Demo Role Login
+
+The header has a role select, `#role-select`, with four synthetic personas. **There is no real login or password.** Choosing a persona only switches the view:
+
+| Persona | Organisation | Opens |
+|---|---|---|---|
+| Ramesh K. | Deccan Royal Caterers | Caterer Portal |
+| Meera S. | Annapurna Seva NGO | Live Dispatch |
+| Arjun V. | EV Rider R-07 | Live Dispatch, with the In Transit filter |
+| Vikram R. | TechPark CSR Sponsor | Business & ROI |
 
 ---
 
@@ -96,7 +133,8 @@ Each locality is stored with placeholder area-centre coordinates. Distances to N
 
 - Zero-dependency HTML5, CSS3 and vanilla JavaScript.
 - No build step, no backend, no package manager (no `package.json`).
-- State is held in memory for the page session.
+- State is saved in the browser's `localStorage` under the key `annasetu_db_v1`. A reset clears it.
+- When a saved state is more than 15 minutes old, batch timestamps are shifted forward on load so demo batches do not expire during judging. `AS-1008` and Expired batches are excluded from this shift.
 
 ---
 
@@ -114,7 +152,7 @@ python -m http.server 8000
 
 Then visit <http://localhost:8000>.
 
-Neither option has been tested in this repository. Both are standard ways to run a static page.
+Both options are available. Neither was tested in this environment.
 
 ---
 
@@ -145,12 +183,19 @@ Breakpoints are taken from `styles.css`:
 ## Limitations & Next Steps
 
 - **All data is synthetic.** Caterers, NGOs, riders, phone numbers, coordinates and distances are placeholders.
-- **No persistence.** The code does not use `localStorage` or `sessionStorage`. Posted batches, claims and ledger entries are lost on page reload.
-- **No authentication.** Anyone using the page can act as caterer, dispatcher or NGO.
+- **Browser-only persistence.** State lives in `localStorage` (`annasetu_db_v1`) on one browser. There is no server-side storage.
+- **No authentication.** The demo role select is not a login. Anyone using the page can switch to any persona.
 - **No real routing or maps.** Distances are fixed seed values; the radar is a schematic.
 - **No payments.** Subscription and CSR figures are illustrative calculations.
 - **Food safety is not certified.** Temperature verification is a self-attested checkbox.
 - **Possible next steps:** a backend with persistent storage and accounts, real geocoding and routing, sensor- or log-based temperature capture, and an audited methodology for the CO2 factor.
+
+### Known limitations
+
+- The ROI result cards that sat in a removed duplicate block are gone. The 6-card KPI grid remains.
+- The Smart Match factor sub-scores are recomputed with the same expressions as the scorer. They are not stored separately.
+- Nothing has been verified in a browser.
+- The Lucide icons load from unpkg and need network access.
 
 ---
 

@@ -37,10 +37,13 @@
             <option value="Gachibowli">Gachibowli</option>
             <option value="Kondapur">Kondapur</option>
             <option value="Jubilee Hills">Jubilee Hills</option>
+            <option value="Hitech City">Hitech City</option>
+            <option value="Banjara Hills">Banjara Hills</option>
           </select>
           <input id="header-search-input" type="search" placeholder="Search batch ID, caterer, or dish...">
         </div>
         <span id="city-status-pill" class="status-pill"><span class="status-dot" aria-hidden="true"></span>Hyderabad Corridor • Active</span>
+        <div class="role-switcher"><label for="role-select" class="role-label">Logged in as</label><select id="role-select" class="role-select" aria-label="Demo role login"><option value="">Select role</option><option value="ramesh">Ramesh K. (Deccan Royal Caterers)</option><option value="meera">Meera S. (Annapurna Seva NGO)</option><option value="arjun">Arjun V. (EV Rider R-07)</option><option value="vikram">Vikram R. (TechPark CSR Sponsor)</option></select></div>
       </header>
 
       <section id="hero-banner" class="hero-banner">
@@ -51,7 +54,10 @@
           <div class="glass-stat"><span class="glass-label">Active Pickups</span><strong id="hero-stat-active">—</strong></div>
           <div class="glass-stat"><span class="glass-label">CO2e Saved</span><strong id="hero-stat-co2e">—</strong></div>
         </div>
-        <button id="hero-cta" class="btn-pill-white" type="button">Post or Claim a Batch</button>
+        <div class="hero-actions">
+<button id="hero-cta" class="btn-pill-white" type="button">Post or Claim a Batch</button>
+<button id="btn-simulate-rescue" type="button" class="btn btn-simulate"><i data-lucide="flame" aria-hidden="true"></i> Simulate Live Rescue</button>
+</div>
       </section>
 
       <section id="pulse-strip" class="pulse-strip" aria-label="Live city pulse">
@@ -65,111 +71,144 @@
     <!-- 1. Caterer Portal (Donate) -->
     <section id="view-caterer" class="view active" role="tabpanel">
       <div class="grid-2 caterer-layout">
-        <section class="panel">
-          <h2>Post a surplus batch</h2>
-          <p class="hint">Use the sample caterer names only. Figures are illustrative.</p>
+        <section class="panel form-card">
+          <div class="form-card-header">
+            <span class="form-card-icon"><i data-lucide="utensils" aria-hidden="true"></i></span>
+            <h2>Post Surplus Batch (&lt; 45 Seconds)</h2>
+            <button type="button" id="btn-autofill-wedding" class="btn form-autofill-pill">Auto-Fill Sample Surplus</button>
+          </div>
           <form id="donate-form" novalidate>
-            <button type="button" id="btn-autofill-wedding" class="btn primary">Auto-Fill Sample Wedding Surplus (15s Demo)</button>
+            <p class="hint">Use the sample caterer names only. Figures are illustrative.</p>
             <div id="waste-insight-box" class="insight-box" role="note">
               <h3>Caterer Waste Pattern Alert</h3>
               <p id="waste-insight-text"></p>
             </div>
 
-            <label>Caterer name
-              <input name="caterer" type="text" maxlength="60" required placeholder="e.g. Deccan Royal Caterers">
-            </label>
-            <label>Locality
-              <select name="locality" id="locality-select"></select>
-            </label>
-
-            <fieldset class="field-group">
-              <legend>Food (tap a preset)</legend>
-              <div class="chip-row">
-                <button type="button" class="chip" data-food="Veg Biryani &amp; Salan" aria-pressed="false">Veg Biryani &amp; Salan</button>
-                <button type="button" class="chip" data-food="Dal Tadka &amp; Jeera Rice" aria-pressed="false">Dal Tadka &amp; Jeera Rice</button>
-                <button type="button" class="chip" data-food="Assorted Indian Breads &amp; Paneer" aria-pressed="false">Assorted Indian Breads &amp; Paneer</button>
-                <button type="button" class="chip" data-food="South Indian Tiffin (Idli/Sambar)" aria-pressed="false">South Indian Tiffin (Idli/Sambar)</button>
-                <button type="button" class="chip" data-food="__custom" aria-pressed="false">Custom</button>
-              </div>
-              <input id="food" name="food" type="hidden" value="">
-              <label id="food-custom-wrap" class="hidden" hidden>Custom food description
-                <input id="food-custom" type="text" maxlength="80" placeholder="e.g. Chicken biryani">
+            <div class="field-card">
+              <p class="field-card-label"><i data-lucide="chef-hat" aria-hidden="true"></i> Caterer &amp; Locality</p>
+              <label>Caterer name
+                <input name="caterer" type="text" maxlength="60" required placeholder="e.g. Deccan Royal Caterers">
               </label>
-            </fieldset>
+              <label>Locality
+                <select name="locality" id="locality-select"></select>
+              </label>
+            </div>
 
-            <fieldset class="field-group">
-              <legend>Veg / Non-Veg</legend>
-              <div class="chip-row">
-                <button type="button" class="tag" data-diet="Veg" aria-pressed="false">Veg</button>
-                <button type="button" class="tag" data-diet="Non-Veg" aria-pressed="false">Non-Veg</button>
-              </div>
-              <input id="diet" name="diet" type="hidden" value="">
-            </fieldset>
+            <div class="field-card">
+              <p class="field-card-label"><i data-lucide="utensils" aria-hidden="true"></i> Dish</p>
+              <fieldset class="field-group">
+                <legend>Food (tap a preset)</legend>
+                <div class="chip-row preset-chips">
+                  <button type="button" class="chip" data-food="Veg Biryani &amp; Salan" aria-pressed="false">Veg Biryani &amp; Salan</button>
+                  <button type="button" class="chip" data-food="Chicken Dum Biryani &amp; Raita" aria-pressed="false">Chicken Dum Biryani &amp; Raita</button>
+                  <button type="button" class="chip" data-food="Dal Tadka &amp; Jeera Rice" aria-pressed="false">Dal Tadka &amp; Jeera Rice</button>
+                  <button type="button" class="chip" data-food="Paneer Butter Masala &amp; Naan" aria-pressed="false">Paneer Butter Masala &amp; Naan</button>
+                  <button type="button" class="chip" data-food="South Indian Tiffin (Idli/Sambar)" aria-pressed="false">South Indian Tiffin (Idli/Sambar)</button>
+                  <button type="button" class="chip" data-food="Mutton Haleem &amp; Bread" aria-pressed="false">Mutton Haleem &amp; Bread</button>
+                  <button type="button" class="chip" data-food="Curd Rice &amp; Lemon Rice Combo" aria-pressed="false">Curd Rice &amp; Lemon Rice Combo</button>
+                  <button type="button" class="chip" data-food="__custom" aria-pressed="false">Custom</button>
+                </div>
+                <input id="food" name="food" type="hidden" value="">
+                <label id="food-custom-wrap" class="hidden" hidden>Custom food description
+                  <input id="food-custom" type="text" maxlength="80" placeholder="e.g. Chicken biryani">
+                </label>
+              </fieldset>
 
-            <fieldset class="field-group">
-              <legend>Quantity: <output id="meals-readout" for="kg-slider">50 meals (est.)</output></legend>
-              <div class="slider-row">
-                <input id="kg-slider" name="kg" type="range" min="5" max="100" step="1" value="20" aria-label="Weight in kg">
-                <span class="slider-value">20 kg</span>
-              </div>
-              <div class="chip-row">
-                <button type="button" class="chip" data-kg="10" aria-pressed="false">10 kg</button>
-                <button type="button" class="chip" data-kg="20" aria-pressed="false">20 kg</button>
-                <button type="button" class="chip" data-kg="50" aria-pressed="false">50 kg</button>
-              </div>
-              <p class="hint">Estimated meals = kg &divide; 0.4</p>
-            </fieldset>
+              <fieldset class="field-group">
+                <legend>Veg / Non-Veg</legend>
+                <div class="chip-row">
+                  <button type="button" class="tag" data-diet="Veg" aria-pressed="false">Veg</button>
+                  <button type="button" class="tag" data-diet="Non-Veg" aria-pressed="false">Non-Veg</button>
+                </div>
+                <input id="diet" name="diet" type="hidden" value="">
+              </fieldset>
+            </div>
 
-            <fieldset class="field-group">
-              <legend>Pickup-by window (urgent)</legend>
-              <div class="chip-row">
-                <button type="button" class="chip" data-window="1" aria-pressed="false">Within 1 Hour</button>
-                <button type="button" class="chip" data-window="2" aria-pressed="false">Within 2 Hours</button>
-                <button type="button" class="chip" data-window="3" aria-pressed="false">Within 3 Hours</button>
-              </div>
-            </fieldset>
+            <div class="field-card">
+              <p class="field-card-label"><i data-lucide="scale" aria-hidden="true"></i> Quantity (kg)</p>
+              <fieldset class="field-group">
+                <legend>Quantity: <output id="meals-readout" for="kg-slider">50 meals (est.)</output></legend>
+                <div class="slider-row">
+                  <input id="kg-slider" name="kg" type="range" min="5" max="100" step="1" value="20" aria-label="Weight in kg">
+                  <span class="slider-value">20 kg</span>
+                </div>
+                <div class="chip-row">
+                  <button type="button" class="chip" data-kg="10" aria-pressed="false">10 kg</button>
+                  <button type="button" class="chip" data-kg="20" aria-pressed="false">20 kg</button>
+                  <button type="button" class="chip" data-kg="50" aria-pressed="false">50 kg</button>
+                </div>
+                <p class="hint">Estimated meals = kg &divide; 0.4</p>
+              </fieldset>
+            </div>
 
-            <fieldset class="field-group">
-              <legend>Time cooked (required)</legend>
-              <div class="chip-row">
-                <button type="button" class="chip" data-cooked="0.5" aria-pressed="false">30 min ago</button>
-                <button type="button" class="chip" data-cooked="1" aria-pressed="false">1 hr ago</button>
-                <button type="button" class="chip" data-cooked="2" aria-pressed="false">2 hr ago</button>
-                <button type="button" class="chip" data-cooked="3" aria-pressed="false">3 hr ago</button>
-                <button type="button" class="chip" data-cooked="4" aria-pressed="false">4 hr ago</button>
-              </div>
-              <p id="effective-deadline" class="hint">Effective deadline: select a time cooked.</p>
-            </fieldset>
+            <div class="field-card">
+              <p class="field-card-label"><i data-lucide="clock" aria-hidden="true"></i> Prepared &amp; Pickup Time</p>
+              <fieldset class="field-group">
+                <legend>Pickup-by window (urgent)</legend>
+                <div class="chip-row">
+                  <button type="button" class="chip" data-window="1" aria-pressed="false">Within 1 Hour</button>
+                  <button type="button" class="chip" data-window="2" aria-pressed="false">Within 2 Hours</button>
+                  <button type="button" class="chip" data-window="3" aria-pressed="false">Within 3 Hours</button>
+                </div>
+              </fieldset>
 
-            <fieldset class="field-group">
-              <legend>Handling checklist</legend>
-              <p class="hint">Storage</p>
-              <div class="chip-row" role="group" aria-label="Storage">
-                <button type="button" class="tag" data-storage="Hot-held" aria-pressed="false">Hot-held (&gt;60°C)</button>
-                <button type="button" class="tag" data-storage="Room Temp" aria-pressed="false">Room Temp</button>
-                <button type="button" class="tag" data-storage="Chilled" aria-pressed="false">Chilled (&lt;5°C)</button>
-              </div>
-              <p class="hint">Allergens</p>
-              <div class="chip-row" role="group" aria-label="Allergens">
-                <button type="button" class="tag" data-allergen="Dairy" aria-pressed="false">Dairy</button>
-                <button type="button" class="tag" data-allergen="Nuts" aria-pressed="false">Nuts</button>
-                <button type="button" class="tag" data-allergen="Gluten" aria-pressed="false">Gluten</button>
-                <button type="button" class="tag" data-allergen="Soy" aria-pressed="false">Soy</button>
-                <button type="button" class="tag" data-allergen="None" aria-pressed="false">None</button>
-              </div>
-              <p class="hint">Packaging</p>
-              <div class="chip-row" role="group" aria-label="Packaging">
-                <button type="button" class="tag" data-pack="Sealed Foil Trays" aria-pressed="false">Sealed Foil Trays</button>
-                <button type="button" class="tag" data-pack="Bulk Vessels (Bring Containers)" aria-pressed="false">Bulk Vessels (Bring Containers)</button>
-              </div>
-            </fieldset>
+              <fieldset class="field-group">
+                <legend>Time cooked (required)</legend>
+                <div class="chip-row">
+                  <button type="button" class="chip" data-cooked="0.5" aria-pressed="false">30 min ago</button>
+                  <button type="button" class="chip" data-cooked="1" aria-pressed="false">1 hr ago</button>
+                  <button type="button" class="chip" data-cooked="2" aria-pressed="false">2 hr ago</button>
+                  <button type="button" class="chip" data-cooked="3" aria-pressed="false">3 hr ago</button>
+                  <button type="button" class="chip" data-cooked="4" aria-pressed="false">4 hr ago</button>
+                </div>
+                <p id="effective-deadline" class="hint">Effective deadline: select a time cooked.</p>
+              </fieldset>
+            </div>
 
-            <div id="match-preview" class="match-preview" aria-live="polite"></div>
+            <div class="field-card">
+              <p class="field-card-label"><i data-lucide="thermometer" aria-hidden="true"></i> Storage</p>
+              <fieldset class="field-group">
+                <legend>Storage temperature</legend>
+                <div class="chip-row" role="group" aria-label="Storage">
+                  <button type="button" class="tag" data-storage="Hot-held" aria-pressed="false">Hot-held (&gt;60°C)</button>
+                  <button type="button" class="tag" data-storage="Room Temp" aria-pressed="false">Room Temp</button>
+                  <button type="button" class="tag" data-storage="Chilled" aria-pressed="false">Chilled (&lt;5°C)</button>
+                </div>
+              </fieldset>
+            </div>
+
+            <div class="field-card">
+              <p class="field-card-label"><i data-lucide="shield-alert" aria-hidden="true"></i> Allergens</p>
+              <fieldset class="field-group">
+                <legend>Allergens</legend>
+                <div class="chip-row" role="group" aria-label="Allergens">
+                  <button type="button" class="tag" data-allergen="Dairy" aria-pressed="false">Dairy</button>
+                  <button type="button" class="tag" data-allergen="Nuts" aria-pressed="false">Nuts</button>
+                  <button type="button" class="tag" data-allergen="Gluten" aria-pressed="false">Gluten</button>
+                  <button type="button" class="tag" data-allergen="Soy" aria-pressed="false">Soy</button>
+                  <button type="button" class="tag" data-allergen="None" aria-pressed="false">None</button>
+                </div>
+              </fieldset>
+            </div>
+
+            <div class="field-card">
+              <p class="field-card-label"><i data-lucide="package" aria-hidden="true"></i> Packaging &amp; Servings</p>
+              <fieldset class="field-group">
+                <legend>Packaging</legend>
+                <div class="chip-row" role="group" aria-label="Packaging">
+                  <button type="button" class="tag" data-pack="Sealed Foil Trays" aria-pressed="false">Sealed Foil Trays</button>
+                  <button type="button" class="tag" data-pack="Bulk Vessels (Bring Containers)" aria-pressed="false">Bulk Vessels (Bring Containers)</button>
+                </div>
+              </fieldset>
+            </div>
+
+            <div id="match-preview" class="match-preview smart-match-card" aria-live="polite"></div>
             <p class="hint">Score = 40% distance (max(0, 1 − km/15)) + 35% capacity fit (min(1, remaining ÷ meals)) + 25% diet fit (exact 1.0, Both 0.8).</p>
 
-            <button type="submit" id="donate-submit" class="btn primary">Post batch</button>
+            <button type="submit" id="donate-submit" class="btn btn-publish">Publish Surplus to Live Dispatch</button>
             <p id="donate-msg" class="form-msg" role="status"></p>
           </form>
+
 
         </section>
 
@@ -320,24 +359,7 @@
           <input type="range" id="roi-csr-share" min="0" max="100" step="1" value="20">
         </div>
 
-        <div id="bm-results" class="kpi-grid">
-          <div class="kpi-card">
-            <h3>Monthly recurring revenue (MRR)</h3>
-            <div class="kpi-value" id="bm-mrr"></div>
-          </div>
-          <div class="kpi-card">
-            <h3>Caterer savings vs subscription</h3>
-            <div class="kpi-value" id="bm-savings"></div>
-          </div>
-          <div class="kpi-card">
-            <h3>ROI multiple for caterers</h3>
-            <div class="kpi-value" id="bm-roi"></div>
-          </div>
-          <div class="kpi-card">
-            <h3>Meals rescued at scale</h3>
-            <div class="kpi-value" id="bm-meals"></div>
-          </div>
-        </div>
+
         <div id="kpi-grid" class="kpi-grid"></div>
         <p id="bm-formula" class="esg-note"></p>
       </section>
@@ -378,5 +400,6 @@
 
   <script src="data.js"></script>
   <script src="app.js"></script>
+<div id="toast-container" role="status" aria-live="polite"></div>
 </body>
 </html>
