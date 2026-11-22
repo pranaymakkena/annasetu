@@ -170,11 +170,9 @@
   function phoneSpan(phone) {
     return phone ? ' <span class="contact-phone">' + esc(phone) + "</span>" : "";
   }
-  // ETA in minutes: distance at 0.25 km per minute, minimum 5.
-  function etaFor(b) {
-    if (b.etaMin) return b.etaMin;
-    var ngo = ngoById(b.ngoId);
-    return Math.max(5, Math.round((ngo ? ngo.distance_km : 0) / 0.25));
+  // ETA in minutes at the 25 km/h rule, minimum 4 (same basis as etaMinFor).
+  function etaFor(item) {
+    return Math.max(4, Math.round((item.distance_km / 25) * 60));
   }
   function creditsFor(b) {
     return b.credits !== undefined && b.credits !== null ? b.credits : Math.round(b.kg);
@@ -3017,6 +3015,39 @@
     }
   }
 
+  // Inline SVG fallbacks for offline use, when the lucide script did not load.
+  var SVG_OPEN = '<svg class="lucide-fallback" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
+  var FALLBACK_ICONS = {
+    "utensils": SVG_OPEN + '<path d="M7 3v6"/><path d="M5 3v4a2 2 0 0 0 4 0V3"/><path d="M7 9v12"/><path d="M17 21V3c-2 1-3 4-3 8h3"/></svg>',
+    "radio": SVG_OPEN + '<circle cx="12" cy="12" r="2"/><path d="M16.2 7.8a6 6 0 0 1 0 8.4"/><path d="M7.8 16.2a6 6 0 0 1 0-8.4"/><path d="M19.1 4.9a10 10 0 0 1 0 14.2"/><path d="M4.9 19.1a10 10 0 0 1 0-14.2"/></svg>',
+    "radar": SVG_OPEN + '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><path d="M12 12l6-6"/></svg>',
+    "building-2": SVG_OPEN + '<rect x="4" y="2" width="16" height="20" rx="1"/><path d="M9 22v-4h6v4"/><path d="M8 6h2"/><path d="M14 6h2"/><path d="M8 10h2"/><path d="M14 10h2"/><path d="M8 14h2"/><path d="M14 14h2"/></svg>',
+    "shield-check": SVG_OPEN + '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>',
+    "leaf": SVG_OPEN + '<path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.5 19 2c1 2 2 4.2 2 8 0 5.5-4.8 10-10 10z"/><path d="M2 21c0-3 1.9-5.4 5.1-6C9.5 14.5 12 13 13 12"/></svg>',
+    "indian-rupee": SVG_OPEN + '<path d="M6 3h12"/><path d="M6 8h12"/><path d="M7 3c0 6 3 10 8 10"/><path d="M7 13l8 8"/></svg>',
+    "flame": SVG_OPEN + '<path d="M12 22a7 7 0 0 0 7-7c0-4-3-6-4-10-2 2-3 4-3 6-1-1-2-2-2-4-2 2-5 5-5 8a7 7 0 0 0 7 7z"/></svg>',
+    "drumstick": SVG_OPEN + '<path d="M15 9l-5 5"/><ellipse cx="17" cy="6" rx="3" ry="4" transform="rotate(45 17 6)"/><path d="M6 14c-2 2-2 5 0 7s5 2 7 0"/></svg>',
+    "alert-triangle": SVG_OPEN + '<path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h16.9a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
+    "arrow-right": SVG_OPEN + '<path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>',
+    "download": SVG_OPEN + '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>',
+    "chevron-down": SVG_OPEN + '<path d="M6 9l6 6 6-6"/></svg>',
+    "shield-alert": SVG_OPEN + '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>'
+  };
+
+  // Renders lucide icons; falls back to FALLBACK_ICONS when lucide is unavailable.
+  function renderIcons() {
+    if (typeof lucide === "undefined" || !lucide || !lucide.createIcons) {
+      var nodes = document.querySelectorAll("[data-lucide]");
+      Array.prototype.forEach.call(nodes, function (el) {
+        if (el.querySelector("svg")) return;
+        var name = el.getAttribute("data-lucide");
+        el.innerHTML = Object.prototype.hasOwnProperty.call(FALLBACK_ICONS, name) ? FALLBACK_ICONS[name] : "";
+      });
+      return;
+    }
+    lucide.createIcons();
+  }
+
   function renderAll() {
     populateEsgSelect();
     renderCatererList();
@@ -3037,7 +3068,7 @@
     renderEsgMethodology();
     renderNavBadges();
     applyFeedRoleVisibility();
-    if (window.lucide) lucide.createIcons();
+    renderIcons();
     if (!saveSuppressed) saveDb();
   }
 
@@ -3055,7 +3086,7 @@
       if (panel) panel.classList.toggle("active", v === view);
     });
     renderers[view]();
-    if (window.lucide) lucide.createIcons();
+    renderIcons();
   }
 
   document.addEventListener("click", function (e) {
