@@ -954,7 +954,7 @@
     var keys = {
       Posted: "posted", Assigned: "claimed", Claimed: "claimed",
       "Picked Up": "collected", Collected: "collected", "In Transit": "collected",
-      Delivered: "delivered", Expired: "expired"
+      Delivered: "delivered", Expired: "expired", Split: "split"
     };
     var key = Object.prototype.hasOwnProperty.call(keys, status) ? keys[status] : "posted";
     return '<span class="status-badge status-' + key + '">' + key.toUpperCase() + "</span>";
@@ -975,6 +975,7 @@
   // Live countdown: <span class="countdown"> with data-expires, so the ticker keeps text and the
   // "urgent" class (under URGENT_MIN minutes) current. Expired and Delivered show a fixed label.
   function urgencyHtml(b, now) {
+    if (b.status === "Split") return '<span class="countdown">Split</span>';
     if (b.status === "Expired") return '<span class="countdown">Expired</span>';
     if (b.status === "Delivered") return '<span class="countdown">Completed</span>';
     var left = b.expiresAt - now;
@@ -1156,7 +1157,7 @@
   function cardHtml(b, now, actionHtml) {
     var ngo = b.ngoId ? ngoById(b.ngoId) : null;
     var isVeg = b.diet === "Veg";
-    var closed = b.status === "Delivered" || b.status === "Expired";
+    var closed = b.status === "Delivered" || b.status === "Expired" || b.status === "Split";
     var left = b.expiresAt - now;
     var urgent = !closed && left < URGENT_MIN * MIN;
     var icon = isVeg ? '<i data-lucide="leaf" aria-hidden="true"></i>' : '<i data-lucide="flame" aria-hidden="true"></i>';
@@ -1173,6 +1174,8 @@
       timeLeft = '<span class="meta-value">Completed</span>';
     } else if (b.status === "Expired") {
       timeLeft = '<span class="meta-value">Expired</span>';
+    } else if (b.status === "Split") {
+      timeLeft = '<span class="meta-value">' + esc("Split into " + (b.splitChildren || []).length) + "</span>";
     } else {
       timeLeft = '<span class="meta-value countdown' + (urgent ? " urgent" : "") + '" data-expires="' +
         esc(b.expiresAt) + '">' + esc(formatCountdown(left)) + "</span>";
@@ -1207,7 +1210,14 @@
   // Footer content: forward actions plus the handling guide while the batch is open.
   // Delivered and Expired batches have no actions, so a status line is shown instead.
   function cardFooterHtml(b, actionHtml) {
+    if (b.status === "Split") {
+      return '<p class="card-status">' + 'Split \u2022 ' + (b.splitChildren || []).map(esc).join(", ") + "</p>";
+    }
     var footer = actionHtml || "";
+    if (isSplittable(b)) {
+      footer += '<button type="button" class="btn btn-secondary" data-action="split-open" data-id="' + esc(b.id) +
+        '">Split Across NGOs</button>';
+    }
     if (isOpenStatus(b)) {
       footer += '<button type="button" class="btn btn-secondary" data-action="handling" data-id="' + esc(b.id) +
         '">Handling guide</button>';
@@ -3645,28 +3655,311 @@
     }).join("");
   }
 
-  // Split-claim panel: Posted batches above 40 kg, top two NGOs by the existing score.
-  function renderSplitClaim() {
-    var box = $("split-claim-panel");
-    if (!box) return;
-    var posted = state.batches.filter(function (b) {
-      return b.status === "Posted" && !b.locked && (Number(b.kg) || 0) > 40;
+  // ---------- split across NGOs (allocator) ----------
+  // A batch is splittable when Posted, unlocked and at least SPLIT_MIN_MEALS meals.
+  var SPLIT_MIN_MEALS = 150;
+  // Session-only allocator draft: { batchId, alloc: { ngoId: meals } }. Never saved.
+  var splitDraft = null;
+
+  // Meal count: servings when present, otherwise kg / MEAL_KG.
+  function batchMeals(b) {
+    if (!b) return 0;
+    if (b.servings !== null && b.servings !== undefined && isFinite(Number(b.servings))) {
+      return Math.max(0, Math.round(Number(b.servings)));
+    }
+    return Math.max(0, Math.round((Number(b.kg) || 0) / MEAL_KG));
+  }
+
+  function isSplittable(b) {
+    return !!b && b.status === "Posted" && !b.locked && batchMeals(b) >= SPLIT_MIN_MEALS;
+  }
+
+  // Top n NGOs (default 3) from rankNgos that have spare capacity, as [{ngo, remaining}].
+  function splitCandidates(b, n) {
+    if (!b) return [];
+    var limit = n > 0 ? n : 3;
+    return rankNgos(state.ngos, { diet: b.diet, meals: batchMeals(b) }).filter(function (m) {
+      return remaining(m.ngo) > 0;
+    }).slice(0, limit).map(function (m) {
+      return { ngo: m.ngo, remaining: remaining(m.ngo) };
     });
-    if (!posted.length) {
-      box.innerHTML = '<p class="empty">No posted batches above 40 kg need a split.</p>';
+  }
+
+  // Per-row ceiling: the NGO's remaining meals, never more than the batch total.
+  function splitCap(c, total) {
+    return Math.max(0, Math.min(c.remaining, total));
+  }
+
+  // Equal shares of total, each capped at its ceiling; any remainder goes to the first rows with room.
+  function initialSplit(cands, total) {
+    var alloc = {};
+    if (!cands.length) return alloc;
+    var share = Math.floor(total / cands.length);
+    cands.forEach(function (c) {
+      alloc[c.ngo.id] = Math.min(share, splitCap(c, total));
+    });
+    var left = total - cands.reduce(function (s, c) { return s + alloc[c.ngo.id]; }, 0);
+    cands.forEach(function (c) {
+      if (left <= 0) return;
+      var add = Math.min(left, splitCap(c, total) - alloc[c.ngo.id]);
+      if (add > 0) { alloc[c.ngo.id] += add; left -= add; }
+    });
+    return alloc;
+  }
+
+  // Sum, readiness and status note for the current allocation.
+  function splitStatus(cands, alloc, total) {
+    var sum = 0;
+    var capTotal = 0;
+    cands.forEach(function (c) {
+      sum += alloc[c.ngo.id] || 0;
+      capTotal += splitCap(c, total);
+    });
+    var short = capTotal < total;
+    var note;
+    if (short) note = "Not enough capacity across these NGOs";
+    else if (sum === total) note = "Split balanced across " + cands.length + " NGO(s).";
+    else note = "Move " + (total - sum) + " more meal(s) to reach the total.";
+    return { sum: sum, ready: !short && sum === total, note: note };
+  }
+
+  // Ensures #split-claim-panel exists (created inside the feed or caterer view when missing).
+  function ensureSplitPanel() {
+    var box = $("split-claim-panel");
+    if (box) return box;
+    var host = $("view-feed") || $("view-caterer");
+    if (!host) return null;
+    box = document.createElement("div");
+    box.id = "split-claim-panel";
+    host.appendChild(box);
+    return box;
+  }
+
+  function removeSplitAllocator(box) {
+    if (!box) return;
+    var old = box.querySelectorAll(".split-allocator");
+    for (var i = 0; i < old.length; i++) {
+      if (old[i].parentNode) old[i].parentNode.removeChild(old[i]);
+    }
+  }
+
+  // Draws the allocator for one splittable Posted batch into #split-claim-panel.
+  function renderSplitAllocator(batchId) {
+    var box = ensureSplitPanel();
+    if (!box) return;
+    removeSplitAllocator(box);
+    var b = findBatch(batchId);
+    if (!isSplittable(b)) {
+      if (splitDraft && splitDraft.batchId === batchId) splitDraft = null;
+      showToast("Split not available", (b ? b.id : batchId) +
+        " needs a Posted, unlocked batch of at least " + SPLIT_MIN_MEALS + " meals.", "warn");
       return;
     }
-    box.innerHTML = posted.map(function (b) {
-      var top = rankNgos(state.ngos, { diet: b.diet, meals: b.servings }).slice(0, 2);
-      var buttons = top.length ? top.map(function (m) {
-        return '<button type="button" class="btn btn-secondary" data-action="split-claim" data-id="' + esc(b.id) +
-          '" data-ngo="' + esc(m.ngo.id) + '">Claim with ' + esc(m.ngo.name) + "</button>";
-      }).join("") : '<p class="hint">No compatible NGO with capacity right now.</p>';
-      return '<article class="card split-card"><div class="card-header"><div><h3 class="card-title">' + esc(b.food) +
-        '</h3><p class="card-subtitle">' + esc(b.id) + " \u00B7 " + esc(fmtNum(b.kg)) + " kg</p></div></div>" +
-        '<div class="card-actions">' + buttons + "</div></article>";
+    var total = batchMeals(b);
+    var cands = splitCandidates(b, 3);
+    if (!splitDraft || splitDraft.batchId !== batchId) {
+      splitDraft = { batchId: batchId, alloc: initialSplit(cands, total) };
+    } else {
+      var kept = {};
+      cands.forEach(function (c) {
+        var v = Number(splitDraft.alloc[c.ngo.id]) || 0;
+        kept[c.ngo.id] = Math.max(0, Math.min(v, splitCap(c, total)));
+      });
+      splitDraft.alloc = kept;
+    }
+    var st = splitStatus(cands, splitDraft.alloc, total);
+    var bid = esc(batchId);
+    var rows = cands.map(function (c) {
+      var max = esc(splitCap(c, total));
+      var val = esc(splitDraft.alloc[c.ngo.id] || 0);
+      var label = esc("Meals for " + c.ngo.name);
+      return '<div class="split-row"><div class="split-row-head"><span>' + esc(c.ngo.name) + "</span><span>" +
+        esc(fmtNum(c.remaining)) + " meals remaining</span></div>" +
+        '<input type="range" min="0" max="' + max + '" step="1" value="' + val + '" data-role="alloc" data-ngo="' +
+        esc(c.ngo.id) + '" data-batch-id="' + bid + '" aria-label="' + label + '">' +
+        '<input type="number" min="0" max="' + max + '" step="1" value="' + val + '" data-role="alloc" data-ngo="' +
+        esc(c.ngo.id) + '" data-batch-id="' + bid + '" aria-label="' + label + '"></div>';
     }).join("");
+    var html = '<div class="split-allocator card" data-batch-id="' + bid + '">' +
+      '<div class="card-header"><div><h3 class="card-title">Split across NGOs</h3>' +
+      '<p class="card-subtitle">' + bid + " \u00B7 " + esc(fmtNum(total)) + " meals in batch</p></div>" +
+      '<button type="button" class="btn btn-secondary split-close-btn" data-action="split-close" aria-label="Close split allocator">Close</button></div>' +
+      (cands.length ? rows : '<p class="hint">No compatible NGO with capacity right now.</p>') +
+      '<p class="hint" data-role="alloc-total">Allocated ' + esc(fmtNum(st.sum)) + " of " + esc(fmtNum(total)) +
+      " meals</p>" +
+      '<p class="hint" data-role="alloc-note">' + esc(st.note) + "</p>" +
+      '<button class="btn btn-primary" data-action="split-confirm" data-id="' + bid + '"' +
+      (st.ready ? "" : " disabled") + ">Confirm split</button></div>";
+    box.insertAdjacentHTML("beforeend", html);
   }
+
+  // Redraws an open allocator from the draft (used after renderAll rewrites the panel).
+  function renderOpenSplit() {
+    if (!splitDraft) return;
+    var b = findBatch(splitDraft.batchId);
+    if (!isSplittable(b)) {
+      splitDraft = null;
+      removeSplitAllocator($("split-claim-panel"));
+      return;
+    }
+    renderSplitAllocator(splitDraft.batchId);
+  }
+
+  // Pushes the draft into the open allocator's inputs, total, note and confirm button.
+  function refreshSplitAllocatorDom(batchId) {
+    var box = $("split-claim-panel");
+    var root = box ? box.querySelector(".split-allocator") : null;
+    if (!root || !splitDraft || splitDraft.batchId !== batchId) return;
+    var b = findBatch(batchId);
+    if (!b) return;
+    var total = batchMeals(b);
+    var cands = splitCandidates(b, 3);
+    var st = splitStatus(cands, splitDraft.alloc, total);
+    var inputs = root.querySelectorAll('[data-role="alloc"]');
+    for (var i = 0; i < inputs.length; i++) {
+      var val = String(splitDraft.alloc[inputs[i].getAttribute("data-ngo") || ""] || 0);
+      if (inputs[i].value !== val) inputs[i].value = val;
+    }
+    var totalEl = root.querySelector('[data-role="alloc-total"]');
+    if (totalEl) totalEl.textContent = "Allocated " + fmtNum(st.sum) + " of " + fmtNum(total) + " meals";
+    var noteEl = root.querySelector('[data-role="alloc-note"]');
+    if (noteEl) noteEl.textContent = st.note;
+    var btn = root.querySelector('[data-action="split-confirm"]');
+    if (btn) btn.disabled = !st.ready;
+  }
+
+  // Auto-balance: clamp the changed row to [0, its ceiling], then move the difference across the other
+  // rows in proportion to their current shares, never above each row's remaining capacity.
+  // If capacity is short, the other rows take all they can and the note says so.
+  function balanceSplit(batchId, changedNgoId, value) {
+    var b = findBatch(batchId);
+    if (!isSplittable(b)) return false;
+    var total = batchMeals(b);
+    var cands = splitCandidates(b, 3);
+    var ids = cands.map(function (c) { return c.ngo.id; });
+    if (ids.indexOf(changedNgoId) === -1) return false;
+    if (!splitDraft || splitDraft.batchId !== batchId) {
+      splitDraft = { batchId: batchId, alloc: initialSplit(cands, total) };
+    }
+    var alloc = splitDraft.alloc;
+    var caps = {};
+    cands.forEach(function (c) { caps[c.ngo.id] = splitCap(c, total); });
+    var v = Math.round(Number(value));
+    if (!isFinite(v)) v = 0;
+    v = Math.max(0, Math.min(v, caps[changedNgoId]));
+    alloc[changedNgoId] = v;
+    var others = ids.filter(function (id) { return id !== changedNgoId; });
+    var capSum = others.reduce(function (s, id) { return s + caps[id]; }, 0);
+    var need = Math.min(total - v, capSum);
+    var shareSum = others.reduce(function (s, id) { return s + (alloc[id] || 0); }, 0);
+    var assigned = 0;
+    others.forEach(function (id) {
+      var cur = alloc[id] || 0;
+      var raw = shareSum > 0 ? cur * need / shareSum : 0;
+      alloc[id] = Math.min(caps[id], Math.floor(raw));
+      assigned += alloc[id];
+    });
+    var left = need - assigned;
+    others.forEach(function (id) {
+      if (left <= 0) return;
+      var add = Math.min(left, caps[id] - alloc[id]);
+      if (add > 0) { alloc[id] += add; left -= add; }
+    });
+    refreshSplitAllocatorDom(batchId);
+    return true;
+  }
+
+  // Delegated input handler for #split-claim-panel (attached once in init).
+  function onSplitPanelInput(e) {
+    var t = e.target;
+    if (!t || !t.getAttribute || t.getAttribute("data-role") !== "alloc") return;
+    balanceSplit(t.getAttribute("data-batch-id") || "", t.getAttribute("data-ngo") || "", t.value);
+  }
+
+  // Confirm: validate, then create sub-dispatches ID+A, ID+B, ID+C (rows with allocation > 0 only).
+  // The parent becomes Split. Children are normal batches with splitParent set; nextNum is not used.
+  function confirmSplit(batchId) {
+    var b = findBatch(batchId);
+    if (!isSplittable(b)) {
+      showToast("Split not created", (b ? b.id : batchId) + " is no longer an open batch of 150+ meals.", "warn");
+      return false;
+    }
+    if (!splitDraft || splitDraft.batchId !== batchId) {
+      showToast("Split not created", b.id + ": open the split allocator first.", "warn");
+      return false;
+    }
+    var total = batchMeals(b);
+    var cands = splitCandidates(b, 3);
+    var plan = [];
+    var sum = 0;
+    for (var i = 0; i < cands.length; i++) {
+      var c = cands[i];
+      var meals = Math.round(Number(splitDraft.alloc[c.ngo.id]) || 0);
+      if (meals > remaining(c.ngo)) {
+        showToast("Split not created", c.ngo.name + " has " + fmtNum(remaining(c.ngo)) +
+          " meals left, allocation is " + fmtNum(meals) + ".", "warn");
+        return false;
+      }
+      sum += meals;
+      if (meals > 0) plan.push({ ngo: c.ngo, meals: meals });
+    }
+    if (sum !== total) {
+      showToast("Split not created", "Allocated " + fmtNum(sum) + " of " + fmtNum(total) + " meals.", "warn");
+      return false;
+    }
+    var suffixes = ["A", "B", "C"];
+    for (var k = 0; k < plan.length; k++) {
+      if (findBatch(b.id + suffixes[k])) {
+        showToast("Split not created", b.id + suffixes[k] + " already exists.", "warn");
+        return false;
+      }
+    }
+    var now = Date.now();
+    var rider = b.rider ? String(b.rider) : (RIDERS[0] ? RIDERS[0].name : "");
+    var vehicle = (b.rider && b.vehicle) ? b.vehicle : riderVehicle(rider);
+    var created = [];
+    plan.forEach(function (p, idx) {
+      var child = {
+        id: b.id + suffixes[idx],
+        caterer: b.caterer,
+        catererPhone: b.catererPhone,
+        locality: b.locality,
+        food: b.food,
+        diet: b.diet,
+        storage: b.storage,
+        allergens: Array.isArray(b.allergens) ? b.allergens.slice() : b.allergens,
+        packaging: b.packaging,
+        preparedAt: b.preparedAt,
+        expiresAt: b.expiresAt,
+        servings: p.meals,
+        kg: Math.round(p.meals * MEAL_KG * 10) / 10,
+        status: "Claimed",
+        ngoId: p.ngo.id,
+        rider: rider,
+        vehicle: vehicle,
+        etaMin: Math.max(5, Math.round((Number(p.ngo.distance_km) || 0) / 0.25)),
+        claimedAt: now,
+        splitParent: b.id,
+        locked: false,
+        dispatchNote: null,
+        events: [{ type: "Claimed", at: now }]
+      };
+      state.batches.push(child);
+      created.push(child);
+    });
+    b.status = "Split";
+    b.splitChildren = created.map(function (c) { return c.id; });
+    b.dispatchNote = b.id + " split into " + created.length + " sub-dispatches.";
+    b.events.push({ type: "Split", at: now });
+    state.feedMsg = b.id + " split into " + created.length + " sub-dispatches: " + b.splitChildren.join(", ") + ".";
+    splitDraft = null;
+    created.forEach(function (c) { queueClaimedAlerts(c); });
+    showToast("Split confirmed: " + created.length + " sub-dispatches", b.id + " split across NGOs", "ok");
+    renderAll();
+    saveDb();
+    return true;
+  }
+
 
   // Shelf-life estimator: built once so typed values survive re-renders. Handling guidance only.
   function updateEstimator() {
@@ -4147,7 +4440,7 @@
     renderCorridorEta();
     renderNgoNetwork();
     renderCapacityBars();
-    renderSplitClaim();
+    renderOpenSplit();
     renderSafety();
     renderMatchBreakdown();
     renderEsgKpis();
@@ -4205,6 +4498,13 @@
       renderAll();
     } else if (action === "handling") {
       openHandling(id);
+    } else if (action === "split-open") {
+      renderSplitAllocator(id);
+    } else if (action === "split-close") {
+      splitDraft = null;
+      removeSplitAllocator($("split-claim-panel"));
+    } else if (action === "split-confirm") {
+      confirmSplit(id);
     } else if (action === "dispatch-top-match") {
       var dispatchBatch = findBatch(id);
       if (!dispatchBatch || dispatchBatch.locked || dispatchBatch.status !== "Posted") {
@@ -4364,6 +4664,10 @@
   // Delegated listeners for the v6 modules: attached once here, never inside a render.
   document.addEventListener("click", onModuleClick);
   document.addEventListener("change", onModuleChange);
+  // Split allocator: one delegated input listener on #split-claim-panel, attached once here.
+  var splitPanel = ensureSplitPanel();
+  if (splitPanel) splitPanel.addEventListener("input", onSplitPanelInput);
+
   // Radar pin and popover listeners: attached once here.
   bindRadarListeners();
   var estimatorHost = $("safety-estimator");

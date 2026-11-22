@@ -85,8 +85,13 @@ The sidebar lists seven views in this order. Each is opened by its `data-view` v
 
 ### Split-batch claiming
 
-- A Posted batch above **40 kg** shows up to **two** NGO candidates (the top two by score).
-- Claiming one creates a new Claimed batch for **half** the kg, and reduces the original batch by the same amount.
+- **Threshold:** a Posted batch of **150 or more meals** can be split. Batches below 150 meals use the normal single-NGO claim.
+- **Allocator:** "Split Across NGOs" opens an allocator for up to **three Hyderabad NGOs** with remaining capacity, chosen by `splitCandidates`. Each NGO has a slider and a number input. Moving one value rebalances the others in proportion to their current shares, never above an NGO's remaining capacity. **Confirm** stays disabled until the allocations sum to the batch's meals. A **Close** button dismisses the allocator.
+- **Parent status:** confirming marks the original batch **Split**. Its card shows "Split into N" and lists its children, with no countdown.
+- **Child dispatches:** each allocation becomes a child batch with the parent's id plus **A, B or C** (for example `AS-1011A`). Each child is **Claimed** to its NGO, carries its own meals and kg, and shares the parent's rider. Each child's meals reduce that NGO's remaining daily capacity.
+- **Corridor Radar:** each child draws its own route from the kitchen to its NGO.
+- The allocator is the only split control; the earlier single-split control was removed.
+
 
 ### Pickup stages
 
@@ -125,7 +130,7 @@ These are assumptions set in the code, not verified figures:
 
 ## Persistence
 
-- State is saved in the browser's `localStorage` under the key **`annasetu_db_v1`**. The reset demo data action clears it.
+- State is saved in the browser's `localStorage` under the key **`annasetu_db_v2`**. The reset demo data action clears it.
 - On load, a save older than **15 minutes** has its batch timestamps shifted forward by its age, so demo batches do not expire during judging. **AS-1008** and Expired batches are excluded from this shift and keep their saved times.
 
 ---

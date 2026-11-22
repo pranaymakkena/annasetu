@@ -1869,4 +1869,38 @@ table.ledger-table:has(#ledger-events-body) tbody tr:hover td { background: #ECF
 }
 /* ===== end v19 ===== */
 
+/* ===== v20 split allocator (150+ meals) ===== */
+.card[data-status="Split" i] .card-header { background: #F1F5F9; }
+.status-split { background: #F1F5F9; color: #334155; border-color: #CBD5E1; }
+.split-claim-panel { margin-top: 12px; display: grid; gap: 12px; }
+.split-claim-panel:empty { display: none; }
+.split-allocator { background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 16px; display: grid; gap: 12px; min-width: 0; box-shadow: 0 8px 20px rgba(15,23,42,0.05); }
+.split-allocator .card-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 0 0 10px; border-bottom: 1px solid #E2E8F0; background: transparent; }
+.split-allocator .card-header h3 { margin: 0; font-size: 1rem; color: #0F172A; min-width: 0; overflow-wrap: anywhere; }
+.split-close-btn { height: 34px; padding: 0 12px; border-radius: 10px; font-size: .82rem; }
+.split-summary { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; font-size: .85rem; color: #475569; font-variant-numeric: tabular-nums; }
+.split-summary .split-total { font-weight: 700; color: #0F172A; }
+.split-summary .split-status-ok { color: #047857; font-weight: 600; }
+.split-summary .split-status-short { color: #B91C1C; font-weight: 600; }
+.split-rows { display: grid; gap: 10px; }
+.split-row { display: grid; gap: 8px; border: 1px solid #E2E8F0; border-radius: 12px; padding: 12px; background: #F8FAFC; min-width: 0; }
+.split-row-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; min-width: 0; font-size: .88rem; color: #0F172A; }
+.split-row-head .split-ngo-name { font-weight: 700; overflow-wrap: anywhere; min-width: 0; }
+.split-row-head .split-ngo-cap { font-size: .75rem; color: #64748B; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.split-row-controls { display: grid; grid-template-columns: minmax(0, 1fr) 96px; gap: 10px; align-items: center; min-width: 0; }
+.split-row input[type="range"] { width: 100%; min-width: 0; accent-color: #059669; margin: 0; }
+.split-row input[type="number"] { width: 96px; height: 40px; border: 1.5px solid #CBD5E1; border-radius: 10px; background: #FFFFFF; padding: 0 10px; font: inherit; font-variant-numeric: tabular-nums; box-sizing: border-box; min-width: 0; }
+.split-row input:focus-visible, .split-allocator button:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(5,150,105,.25); border-color: #059669; }
+.split-confirm-btn { width: 100%; height: 44px; border-radius: 12px; }
+.split-confirm-btn:disabled { opacity: .5; cursor: not-allowed; }
+.split-allocator .split-note { margin: 0; font-size: .78rem; color: #64748B; }
+@media (max-width: 640px) {
+  .split-allocator { padding: 12px; border-radius: 14px; }
+  .split-row-controls { grid-template-columns: minmax(0, 1fr); }
+  .split-row input[type="number"] { width: 100%; }
+  .split-allocator .card-header { flex-wrap: wrap; }
+  .split-close-btn { min-width: 44px; min-height: 44px; }
+}
+/* ===== end v20 ===== */
+
 
