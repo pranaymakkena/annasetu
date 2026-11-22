@@ -24,17 +24,21 @@
     <div class="main-col">
       <header class="app-header">
         <div class="brand">
-          <span class="brand-mark" aria-hidden="true">AS</span>
+          <img src="AnnaSetuLogo.png" alt="AnnaSetu Logo" class="brand-logo">
           <div>
             <h1>AnnaSetu</h1>
             <p class="tagline">Hyperlocal surplus food rescue for event &amp; wedding caterers, Hyderabad</p>
           </div>
         </div>
-        <div class="header-search">
+        <div class="header-search header-controls">
           <select id="header-locality-select" aria-label="Locality">
             <option value="">All localities</option>
+            <option value="Madhapur">Madhapur</option>
+            <option value="Gachibowli">Gachibowli</option>
+            <option value="Kondapur">Kondapur</option>
+            <option value="Jubilee Hills">Jubilee Hills</option>
           </select>
-          <input id="header-search-input" type="search" placeholder="Search batch, caterer or NGO">
+          <input id="header-search-input" type="search" placeholder="Search batch ID, caterer, or dish...">
         </div>
         <span id="city-status-pill" class="status-pill"><span class="status-dot" aria-hidden="true"></span>Hyderabad Corridor • Active</span>
       </header>
@@ -60,7 +64,7 @@
       <main>
     <!-- 1. Caterer Portal (Donate) -->
     <section id="view-caterer" class="view active" role="tabpanel">
-      <div class="grid-2">
+      <div class="grid-2 caterer-layout">
         <section class="panel">
           <h2>Post a surplus batch</h2>
           <p class="hint">Use the sample caterer names only. Figures are illustrative.</p>

@@ -637,17 +637,26 @@
 
   // ---------- render: shared pieces ----------
   function badgeHtml(status) {
-    return '<span class="badge badge-' + esc(status.toLowerCase()) + '">' + esc(status) + "</span>";
+    var keys = {
+      Posted: "posted", Assigned: "claimed", Claimed: "claimed",
+      "Picked Up": "collected", Collected: "collected", "In Transit": "collected",
+      Delivered: "delivered", Expired: "expired"
+    };
+    var key = Object.prototype.hasOwnProperty.call(keys, status) ? keys[status] : "posted";
+    return '<span class="status-badge status-' + key + '">' + key.toUpperCase() + "</span>";
   }
 
-  // Countdown as HH:MM:SS, zero-padded. Returns "Expired" once the deadline has passed.
+
+  // Countdown as "HHh MMm SSs", zero-padded. Returns "Expired" once the deadline has passed.
   function formatCountdown(ms) {
     if (ms <= 0) return "Expired";
     var secs = Math.floor(ms / 1000);
     var hours = Math.floor(secs / 3600);
     var mins = Math.floor((secs % 3600) / 60);
-    return pad(hours) + ":" + pad(mins) + ":" + pad(secs % 60);
+    var two = function (n) { return n < 10 ? "0" + n : String(n); };
+    return two(hours) + "h " + two(mins) + "m " + two(secs % 60) + "s";
   }
+
 
   // Live countdown: <span class="countdown"> with data-expires, so the ticker keeps text and the
   // "urgent" class (under URGENT_MIN minutes) current. Expired and Delivered show a fixed label.
@@ -690,20 +699,16 @@
   // One detail line for the CURRENT stage, shown beneath the stepper (never inside a step pill).
   // Returns trusted inner HTML, or "" when the current stage has nothing to add.
   function stageDetailHtml(b, idx) {
-    if (idx === 1 && b.rider) {
-      var vehicle = b.vehicle || riderVehicle(b.rider);
-      return "Rider: " + esc(b.rider) + phoneSpan(riderPhone(b.rider)) + " \u2022 " + esc(vehicle) +
-        " \u2022 ETA " + esc(etaFor(b)) + " min";
+    var ngo = b.ngoId ? ngoById(b.ngoId) : null;
+    if (!b.rider || !ngo) {
+      return '<div class="assignment-banner">Awaiting Smart Match or manual NGO override</div>';
     }
-    if (idx === 2) {
-      var at = b.collectedAt || eventAt(b, "Collected");
-      return at ? "Picked up " + esc(hhmm(at)) : "";
-    }
-    if (idx === 3) {
-      return "Delivered \u2022 +" + esc(creditsFor(b)) + " impact credits";
-    }
-    return "";
+    return '<div class="assignment-banner">' +
+      "Rider " + esc(b.rider) + ' \u00B7 <span class="contact-phone">' + esc(riderPhone(b.rider) || "") + "</span><br>" +
+      "NGO " + esc(ngo.name) + ' \u00B7 <span class="contact-phone">' + esc(ngo.phone || "") + "</span>" +
+      "</div>";
   }
+
 
   // Stage index for the progress bar: Posted=0, Claimed/Assigned=1, Collected/Picked Up/In Transit=2,
   // Delivered=3. Expired (and any unmapped status) gives -1, so no step is done or current.
@@ -712,17 +717,19 @@
     return Object.prototype.hasOwnProperty.call(STAGE_INDEX, b.status) ? STAGE_INDEX[b.status] : -1;
   }
 
-  // Four progress bars with the stage label under each, then the stage-detail line.
+  // Four progress steps with the stage label under each (done / current).
   function trackerHtml(b) {
-    var idx = stageIndexOf(b);
-    var steps = STAGES.map(function (name, i) {
-      var cls = idx === -1 ? "" : (i < idx ? " done" : (i === idx ? " current" : ""));
-      return '<div class="progress-step' + cls + '"><span>' + esc(name) + "</span></div>";
+    var idx = stageIndexOf(b); // -1 for Expired: no step is done or current
+    var names = ["Posted", "Claimed", "Collected", "Delivered"];
+    var steps = names.map(function (name, i) {
+      var cls = "";
+      if (idx >= 0 && i < idx) cls = " done";
+      else if (idx >= 0 && i === idx) cls = " current";
+      return '<div class="progress-step' + cls + '"><span class="progress-label">' + name + "</span></div>";
     }).join("");
-    var detail = stageDetailHtml(b, idx);
-    return '<div class="progress-steps" aria-label="Pickup stages">' + steps + "</div>" +
-      (detail ? '<p class="step-detail">' + detail + "</p>" : "");
+    return '<div class="progress-steps">' + steps + "</div>";
   }
+
 
   // Radar scale: the 10 km ring sits at RADAR_MAX_PX from the centre (fits the 200 viewBox).
   var RADAR_RINGS_KM = [2, 5, 10];
@@ -735,96 +742,109 @@
   // Compact SVG radar: donor at the centre, distance rings (2/5/10 km), NGO pins at
   // deterministic angles with short labels, a route line to the assigned NGO and a rider dot.
   function renderRadar(b) {
-    var C = 100;
+    var CX = 160, CY = 125;
+    var ANGLES = [-135, -60, 15, 165]; // degrees; one NGO pin per slot, first four NGOs only
+    var RING_LABELS = ["2 km", "5 km", "10 km"];
     var ngo = b.ngoId ? ngoById(b.ngoId) : null;
-    var assignedPt = null;
-    var out = '<svg class="radar" viewBox="0 0 200 200" role="img" aria-label="' +
-      esc("Dispatch radar for " + b.id) + '">';
+    var points = state.ngos.slice(0, ANGLES.length).map(function (n, i) {
+      var a = ANGLES[i] * Math.PI / 180;
+      var R = Math.min((Number(n.distance_km) || 0) * 10, 96);
+      return { n: n, a: a, x: CX + R * Math.cos(a), y: CY + R * Math.sin(a) };
+    });
+    var out = '<svg class="radar" viewBox="0 0 320 260" width="100%" role="img" aria-label="Dispatch radar">';
 
-    RADAR_RINGS_KM.forEach(function (km) {
-      var r = radarPx(km);
-      out += '<circle class="radar-ring" cx="' + C + '" cy="' + C + '" r="' + r + '" fill="none"></circle>';
-      // Ring label sits on the upper-right diagonal, just outside the ring.
-      var lx = (C + (r + 2) * Math.cos(-Math.PI / 4)).toFixed(1);
-      var ly = (C + (r + 2) * Math.sin(-Math.PI / 4)).toFixed(1);
-      out += '<text class="radar-label radar-ring-label" x="' + lx + '" y="' + ly + '">' + km + " km</text>";
+    [20, 50, 100].forEach(function (r, i) {
+      out += '<circle class="radar-ring" cx="160" cy="125" r="' + r + '" fill="none"></circle>';
+      // Ring labels sit on the 45-degree diagonal, just outside each ring.
+      var lx = CX + r * 0.707;
+      var ly = CY + r * 0.707;
+      out += '<text class="radar-ring-label" x="' + lx.toFixed(1) + '" y="' + ly.toFixed(1) +
+        '" text-anchor="start">' + RING_LABELS[i] + "</text>";
     });
 
-    // Route line from donor centre to the assigned NGO (drawn before pins so pins sit on top).
-    state.ngos.forEach(function (n, i) {
-      if (ngo && ngo.id === n.id) {
-        var ang0 = -Math.PI / 2 + (i * 2 * Math.PI) / state.ngos.length;
-        var rr = radarPx(n.distance_km);
-        assignedPt = { x: C + rr * Math.cos(ang0), y: C + rr * Math.sin(ang0) };
-        out += '<line class="radar-route" x1="' + C + '" y1="' + C + '" x2="' + assignedPt.x.toFixed(1) +
-          '" y2="' + assignedPt.y.toFixed(1) + '"></line>';
-      }
+    // Route line from the kitchen to the assigned NGO's pin; drawn before the pins so pins sit on top.
+    var routeIdx = -1;
+    points.forEach(function (p, i) {
+      if (ngo && p.n.id === ngo.id) routeIdx = i;
     });
-
-    state.ngos.forEach(function (n, i) {
-      var ang = -Math.PI / 2 + (i * 2 * Math.PI) / state.ngos.length;
-      var r = radarPx(n.distance_km);
-      var x = (C + r * Math.cos(ang)).toFixed(1);
-      var y = (C + r * Math.sin(ang)).toFixed(1);
-      var assigned = !!ngo && ngo.id === n.id;
-      var short = String(n.name).split(" ").slice(0, 2).join(" ");
-      out += '<g class="ngo-pin' + (assigned ? " assigned" : "") + '"><title>' + esc(n.name) + "</title>" +
-        '<circle cx="' + x + '" cy="' + y + '" r="7"></circle>' +
-        '<text x="' + x + '" y="' + y + '" text-anchor="middle" dy="3">' + esc(n.name.charAt(0)) + "</text>" +
-        '<text class="radar-label" x="' + x + '" y="' + (Number(y) - 10).toFixed(1) +
-        '" text-anchor="middle">' + esc(short) + "</text></g>";
-    });
-
-    out += '<circle class="donor-pin" cx="100" cy="100" r="6"></circle>';
-    out += '<text class="radar-label" x="100" y="196" text-anchor="middle">' +
-      esc("Donor: " + String(b.caterer || "").slice(0, 22)) + "</text>";
-
-    var progress = { Claimed: 0.25, Collected: 0.6, Delivered: 1.0 }[b.status];
-    if (assignedPt && progress !== undefined) {
-      var rx = (C + progress * (assignedPt.x - C)).toFixed(1);
-      var ry = (C + progress * (assignedPt.y - C)).toFixed(1);
-      var cls = "rider-dot" + (b.status === "Delivered" ? "" : " rider-pulse");
-      out += '<circle class="' + cls + '" cx="' + rx + '" cy="' + ry + '" r="5"><title>' +
-        esc(b.rider || "Rider") + "</title></circle>";
+    if (routeIdx >= 0) {
+      out += '<line class="radar-route" x1="160" y1="125" x2="' + points[routeIdx].x.toFixed(1) +
+        '" y2="' + points[routeIdx].y.toFixed(1) + '"></line>';
     }
+
+    points.forEach(function (p) {
+      var name = String(p.n.name || "");
+      var short = name.length > 14 ? name.slice(0, 13) + "\u2026" : name;
+      var sa = Math.sin(p.a);
+      var ca = Math.cos(p.a);
+      var dy = sa < 0 ? -12 : 18;
+      var anchor = Math.abs(ca) < 0.3 ? "middle" : (ca > 0 ? "start" : "end");
+      var lx = Math.min(312, Math.max(8, p.x));
+      var ly = Math.min(252, Math.max(8, p.y));
+      out += '<circle class="radar-pin" cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="5"><title>' +
+        esc(name) + "</title></circle>";
+      out += '<text class="radar-label" x="' + lx.toFixed(1) + '" y="' + ly.toFixed(1) + '" dy="' + dy +
+        '" text-anchor="' + anchor + '">' + esc(short) + "</text>";
+    });
+
+    out += '<circle class="radar-center" cx="160" cy="125" r="5"></circle>';
+    out += '<text class="radar-label" x="168" y="116" text-anchor="start">Kitchen</text>';
     return out + "</svg>";
   }
 
-  // Listing card: .batch-card with a pastel tint; .card-header (category, id pill, countdown);
-  // .card-body (dish, caterer, locality, kg, phone, progress, detail, radar, disclaimer); .card-actions footer.
+
+  // Listing card: .batch-card with a card-header (icon, dish, batch id, status badge), a 2x2 meta-grid,
+  // progress steps, assignment banner, radar, safety note, then the .card-actions footer.
   // actionHtml is trusted markup built by this file (ids are escaped).
   function cardHtml(b, now, actionHtml) {
     var ngo = b.ngoId ? ngoById(b.ngoId) : null;
     var isVeg = b.diet === "Veg";
-    // Pastel tint by category; Expired batches get the blush tint.
-    var tint = b.status === "Expired" ? "tint-blush" : (isVeg ? "tint-mint" : "tint-cream");
+    var closed = b.status === "Delivered" || b.status === "Expired";
+    var left = b.expiresAt - now;
+    var urgent = !closed && left < URGENT_MIN * MIN;
     var icon = isVeg ? "\uD83E\uDD57" : "\uD83C\uDF57"; // salad / poultry emoji
-    var html = '<article class="batch-card ' + tint + '">';
-    html += '<div class="card-header">' +
-      '<span class="category-badge ' + (isVeg ? "veg" : "nonveg") + '" aria-label="' +
-      (isVeg ? "Veg" : "Non-Veg") + '">' + icon + "</span>" +
-      '<div class="card-header-right"><span class="batch-id-pill">' + esc(b.id) + "</span>" +
-      urgencyHtml(b, now) + "</div>" +
-      "</div>";
-    html += '<div class="card-body">';
-    html += "<h3>" + esc(b.food) + "</h3>";
-    html += badgeHtml(b.status);
-    html += '<p class="meta">Caterer: ' + esc(b.caterer) + phoneSpan(b.catererPhone) + "</p>";
-    html += '<p class="meta">' + esc(b.locality) + " · " + esc(b.diet) + " · " + esc(b.servings) +
-      " servings · " + fmtNum(b.kg) + " kg</p>";
-    html += '<p class="meta">Prepared ' + fmtTime(b.preparedAt) + " · Expires " + fmtTime(b.expiresAt) + "</p>";
-    if (ngo) {
-      html += '<p class="meta">NGO: ' + esc(ngo.name) + phoneSpan(ngo.phone) + "</p>";
+    // Distance: the assigned NGO if there is one, otherwise the nearest NGO in the registry.
+    var ref = ngo;
+    if (!ref && state.ngos.length) {
+      ref = state.ngos.reduce(function (a, c) {
+        return Number(c.distance_km) < Number(a.distance_km) ? c : a;
+      });
     }
-    if (b.dispatchNote) html += '<p class="warn">' + esc(b.dispatchNote) + "</p>";
+    var distText = ref && ref.distance_km != null ? Number(ref.distance_km).toFixed(1) + " km" : "\u2014";
+    var timeLeft;
+    if (b.status === "Delivered") {
+      timeLeft = '<span class="meta-value">Completed</span>';
+    } else if (b.status === "Expired") {
+      timeLeft = '<span class="meta-value">Expired</span>';
+    } else {
+      timeLeft = '<span class="meta-value countdown' + (urgent ? " urgent" : "") + '" data-expires="' +
+        esc(b.expiresAt) + '">' + esc(formatCountdown(left)) + "</span>";
+    }
+    var storage = b.storage ? " \u2022 " + esc(b.storage) : "";
+    var html = '<article class="card batch-card' + (urgent ? " urgent" : "") + '" data-status="' + esc(b.status) + '">';
+    html += '<div class="card-header"><div class="card-title-group"><span class="card-icon ' +
+      (isVeg ? "veg" : "nonveg") + '">' + icon + "</span>" +
+      '<div><h3 class="card-title">' + esc(b.food) + '</h3><p class="card-subtitle">' + esc(b.id) + "</p></div>" +
+      "</div>" + badgeHtml(b.status) + "</div>";
+    html += '<div class="meta-grid">' +
+      '<div class="meta-pill"><span class="meta-label">Quantity</span><span class="meta-value">' +
+      esc(fmtNum(b.kg)) + " kg \u2022 " + esc(mealsFor(b.kg)) + " meals</span></div>" +
+      '<div class="meta-pill"><span class="meta-label">Diet &amp; Storage</span><span class="meta-value">' +
+      esc(b.diet) + storage + "</span></div>" +
+      '<div class="meta-pill"><span class="meta-label">Locality &amp; Distance</span><span class="meta-value">' +
+      esc(b.locality) + " \u2022 " + esc(distText) + "</span></div>" +
+      '<div class="meta-pill' + (urgent ? " urgent" : "") + '"><span class="meta-label">Time Left</span>' +
+      timeLeft + "</div>" +
+      "</div>";
     html += trackerHtml(b);
+    html += stageDetailHtml(b, stageIndexOf(b));
     html += '<div class="radar-wrap">' + renderRadar(b) + "</div>";
-    html += '<p class="disclaimer">' + esc(D.DISCLAIMER) + "</p>";
-    html += "</div>";
-    html += '<div class="card-actions">' + cardFooterHtml(b, actionHtml) + "</div>";
+    html += '<p class="safety-note">Logistics only \u00B7 Not a food-safety certification</p>';
+    html += cardFooterHtml(b, actionHtml);
     html += "</article>";
     return html;
   }
+
 
   // Footer content: forward actions plus the handling guide while the batch is open.
   // Delivered and Expired batches have no actions, so a status line is shown instead.
@@ -834,15 +854,18 @@
       footer += '<button type="button" class="btn btn-secondary" data-action="handling" data-id="' + esc(b.id) +
         '">Handling guide</button>';
     }
-    if (footer) return footer;
-    if (b.status === "Delivered") {
-      return '<p class="card-status">' + esc("Delivered \u2022 +" + creditsFor(b) + " impact credits") + "</p>";
+    if (!footer) {
+      if (b.status === "Delivered") {
+        footer = '<p class="card-status">' + esc("Delivered \u2022 +" + creditsFor(b) + " impact credits") + "</p>";
+      } else if (b.status === "Expired") {
+        footer = '<p class="card-status">' + esc("Expired \u2014 Do Not Distribute") + "</p>";
+      } else {
+        footer = '<p class="card-status">' + esc(b.status) + "</p>";
+      }
     }
-    if (b.status === "Expired") {
-      return '<p class="card-status">' + esc("Expired \u2014 Do Not Distribute") + "</p>";
-    }
-    return '<p class="card-status">' + esc(b.status) + "</p>";
+    return '<div class="card-actions">' + footer + "</div>";
   }
+
 
 
 
@@ -890,20 +913,24 @@
 
   // ---------- render: view 2 (feed) ----------
   function renderNgoPanel() {
-    $("ngo-panel").innerHTML = state.ngos.map(function (n) {
-      var used = ngoUsed(n.id);
-      var rem = n.capacity - used;
-      var pct = Math.min(100, Math.round((used / n.capacity) * 100));
-      return '<article class="ngo-card">' +
-        "<h3>" + esc(n.name) + "</h3>" +
-        '<p class="meta">' + esc(n.locality) + " · " + esc(n.pref) + " · " + fmtNum(n.distance_km) + " km</p>" +
-        '<div class="bar" role="img" aria-label="' + pct + '% used"><span style="width:' + pct + '%"></span></div>' +
-        '<p class="meta">Capacity ' + esc(n.capacity) + " · Used " + used +
-        " · Remaining <strong>" + rem + "</strong></p>" +
-        '<p class="meta">Delivered batches: ' + (n.served || 0) + "</p>" +
+    var panel = $("ngo-panel");
+    if (!panel) return;
+    panel.innerHTML = state.ngos.map(function (n) {
+      return '<article class="card ngo-card">' +
+        '<div class="card-header"><div class="card-title-group"><span class="card-icon">\uD83C\uDFE0</span>' +
+        '<div><h3 class="card-title">' + esc(n.name) + '</h3><p class="card-subtitle">' + esc(n.locality) + "</p></div>" +
+        "</div></div>" +
+        '<div class="meta-grid">' +
+        '<div class="meta-pill"><span class="meta-label">Locality</span><span class="meta-value">' + esc(n.locality) + "</span></div>" +
+        '<div class="meta-pill"><span class="meta-label">Capacity</span><span class="meta-value">' + esc(n.capacity) + "</span></div>" +
+        '<div class="meta-pill"><span class="meta-label">Distance (km)</span><span class="meta-value">' + esc(fmtNum(n.distance_km)) + "</span></div>" +
+        '<div class="meta-pill"><span class="meta-label">Preference</span><span class="meta-value">' + esc(n.pref) + "</span></div>" +
+        "</div>" +
+        '<p class="meta"><span class="contact-phone">' + esc(n.phone || "") + "</span></p>" +
         "</article>";
     }).join("");
   }
+
 
   // Dispatch filter predicates. Urgent = under URGENT_MIN minutes left (not Delivered/Expired).
   // In Transit = rider assigned (Claimed or Collected).
